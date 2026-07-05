@@ -1,48 +1,46 @@
 /* ================================================================
-   DOGEAR — catalog.js
+   DOGEARED — catalog.js
    Seed data: genres, moods, a starter catalog (works offline),
-   quotes, achievements, XP rules.
+   quotes, achievements, XP rules, journal prompts.
+   Icons are icon-system names (see icons.js) — no emoji here,
+   except SESSION_MOODS which intentionally stay as emoji.
 ================================================================ */
 "use strict";
 
 const GENRES = [
-  { id: "fantasy",   label: "Fantasy",          em: "🐉" },
-  { id: "scifi",     label: "Sci-Fi",           em: "🛰️" },
-  { id: "romance",   label: "Romance",          em: "🌹" },
-  { id: "mystery",   label: "Mystery & Thriller", em: "🕯️" },
-  { id: "litfic",    label: "Literary Fiction", em: "🖋️" },
-  { id: "historical",label: "Historical",       em: "🏛️" },
-  { id: "horror",    label: "Horror",           em: "🌑" },
-  { id: "nonfic",    label: "Non-fiction",      em: "🔍" },
-  { id: "growth",    label: "Self-Growth",      em: "🌱" },
-  { id: "classics",  label: "Classics",         em: "🏺" },
-  { id: "ya",        label: "Young Adult",      em: "✨" },
-  { id: "poetry",    label: "Poetry & Essays",  em: "🪶" },
+  { id: "fantasy",   label: "Fantasy",          ic: "sparkle" },
+  { id: "scifi",     label: "Sci-Fi",           ic: "rocket" },
+  { id: "romance",   label: "Romance",          ic: "heart" },
+  { id: "mystery",   label: "Mystery & Thriller", ic: "search" },
+  { id: "litfic",    label: "Literary Fiction", ic: "feather" },
+  { id: "historical",label: "Historical",       ic: "landmark" },
+  { id: "horror",    label: "Horror",           ic: "moon" },
+  { id: "nonfic",    label: "Non-fiction",      ic: "lightbulb" },
+  { id: "growth",    label: "Self-Growth",      ic: "sprout" },
+  { id: "classics",  label: "Classics",         ic: "book_open" },
+  { id: "ya",        label: "Young Adult",      ic: "star" },
+  { id: "poetry",    label: "Poetry & Essays",  ic: "pen" },
 ];
 
 const MOODS = [
-  { id: "cozy",     label: "Cozy & comforting",   em: "🕯️" },
-  { id: "dark",     label: "Dark & atmospheric",  em: "🌘" },
-  { id: "twisty",   label: "Fast & twisty",       em: "🌀" },
-  { id: "feels",    label: "Big feelings",        em: "💔" },
-  { id: "mind",     label: "Mind-expanding",      em: "🌌" },
-  { id: "whimsy",   label: "Whimsical & light",   em: "🫧" },
-  { id: "slowburn", label: "Slow burn",           em: "🔥" },
-  { id: "epic",     label: "Epic adventure",      em: "⚔️" },
+  { id: "cozy",     label: "Cozy & comforting",   ic: "coffee" },
+  { id: "dark",     label: "Dark & atmospheric",  ic: "moon" },
+  { id: "twisty",   label: "Fast & twisty",       ic: "shuffle" },
+  { id: "feels",    label: "Big feelings",        ic: "heart" },
+  { id: "mind",     label: "Mind-expanding",      ic: "lightbulb" },
+  { id: "whimsy",   label: "Whimsical & light",   ic: "wind" },
+  { id: "slowburn", label: "Slow burn",           ic: "sunrise" },
+  { id: "epic",     label: "Epic adventure",      ic: "mountain" },
 ];
 
-/* genre → generated-cover gradient */
+/* genre → solid brand-tinted color (no gradients) */
 const GENRE_HUES = {
-  fantasy:   ["#5B3A8C", "#2E1D52"], scifi:  ["#1F4E6B", "#0E2436"],
-  romance:   ["#B04A63", "#5E2438"], mystery:["#3D4A3E", "#171F18"],
-  litfic:    ["#8C6A3F", "#3F2E1A"], historical:["#7A5230", "#3A2716"],
-  horror:    ["#3A2F3F", "#120D16"], nonfic: ["#2F5D50", "#12291F"],
-  growth:    ["#5E7A3A", "#2A3A18"], classics:["#7A3A2E", "#361611"],
-  ya:        ["#B05E2E", "#5C2C12"], poetry: ["#4E5D7A", "#20293A"],
+  fantasy: "#5B3A8C", scifi: "#1F4E6B", romance: "#B04A63", mystery: "#3D4A3E",
+  litfic: "#8C6A3F", historical: "#7A5230", horror: "#3A2F3F", nonfic: "#2F5D50",
+  growth: "#5E7A3A", classics: "#7A3A2E", ya: "#B05E2E", poetry: "#4E5D7A",
 };
 
-/* Starter catalog — powers Discover offline & seeds recommendations.
-   r = community rating (approx), m = moods, g = genres */
+/* Starter catalog — powers Discover offline & seeds recommendations. */
 const CATALOG = [
   { id:"c1",  t:"The Name of the Wind", a:"Patrick Rothfuss", g:["fantasy"], m:["epic","slowburn"], p:662, y:2007, r:4.5, b:"A legendary arcanist recounts how a gifted, grieving boy talked his way into a university of magic — and into myth." },
   { id:"c2",  t:"A Wizard of Earthsea", a:"Ursula K. Le Guin", g:["fantasy","classics"], m:["mind","epic"], p:183, y:1968, r:4.0, b:"A young mage's pride looses a shadow on the world, and the hunt to name it becomes a hunt for himself." },
@@ -111,37 +109,67 @@ const QUOTES = [
   ["The reading of all good books is like a conversation with the finest minds of past centuries.", "René Descartes"],
 ];
 
-/* ---------- gamification ---------- */
+/* ---------------- gamification ---------------- */
 const XP_RULES = {
-  perMinute: 1,        // 1 XP per minute read
-  perPage: 2,          // 2 XP per page
-  finishBook: 150,     // finishing a book
-  firstSessionOfDay: 20,
-  journalEntry: 15,
-  review: 25,
-  newGenre: 40,
+  perMinute: 1, perPage: 2, finishBook: 150, firstSessionOfDay: 20,
+  journalEntry: 15, deepJournalEntry: 22, review: 25, newGenre: 40,
 };
 const levelForXP = (xp) => Math.floor(Math.sqrt(xp / 60)) + 1;
 const xpForLevel = (lv) => Math.pow(lv - 1, 2) * 60;
 
 const ACHIEVEMENTS = [
-  { id:"first_session", ic:"📖", t:"First Page",        d:"Log your first reading session", test:(s)=>s.sessions.length>=1 },
-  { id:"page_turner",   ic:"📚", t:"Page Turner",       d:"Read 100 pages",                 test:(s,d)=>d.totalPages>=100 },
-  { id:"thousand",      ic:"🏛️", t:"1,000 Pages",       d:"Read 1,000 pages",               test:(s,d)=>d.totalPages>=1000 },
-  { id:"night_owl",     ic:"🦉", t:"Night Owl",         d:"Finish a session after 11pm",    test:(s)=>s.sessions.some(x=>new Date(x.createdAt).getHours()>=23||new Date(x.createdAt).getHours()<4) },
-  { id:"early_bird",    ic:"🌅", t:"Dawn Reader",       d:"Read before 7am",                test:(s)=>s.sessions.some(x=>{const h=new Date(x.createdAt).getHours();return h>=4&&h<7}) },
-  { id:"weekend",       ic:"🛋️", t:"Weekend Warrior",   d:"Read on a Saturday and Sunday",  test:(s)=>{const ds=new Set(s.sessions.map(x=>new Date(x.date+"T12:00").getDay()));return ds.has(0)&&ds.has(6)} },
-  { id:"streak7",       ic:"🔥", t:"One Week Ritual",   d:"7-day reading streak",           test:(s,d)=>d.bestStreak>=7 },
-  { id:"streak30",      ic:"☄️", t:"30-Day Streak",     d:"30-day reading streak",          test:(s,d)=>d.bestStreak>=30 },
-  { id:"finisher",      ic:"🏁", t:"The Finisher",      d:"Finish your first book",         test:(s,d)=>d.finished>=1 },
-  { id:"five_books",    ic:"🖐️", t:"Handful of Worlds", d:"Finish 5 books",                 test:(s,d)=>d.finished>=5 },
-  { id:"marathon",      ic:"🏃", t:"Book Marathon",     d:"A single session over 90 min",   test:(s)=>s.sessions.some(x=>x.minutes>=90) },
-  { id:"explorer",      ic:"🧭", t:"Genre Explorer",    d:"Finish books in 3 genres",       test:(s,d)=>d.genresFinished>=3 },
-  { id:"annotator",     ic:"🖊️", t:"Annotation Master", d:"Save 10 notes or quotes",        test:(s)=>s.journal.length>=10 },
-  { id:"critic",        ic:"⭐", t:"The Critic",        d:"Rate and review 3 books",        test:(s)=>s.books.filter(b=>b.rating&&b.review).length>=3 },
-  { id:"collector",     ic:"🗄️", t:"The Collector",     d:"20 books in your library",       test:(s)=>s.books.length>=20 },
+  { id:"first_session", ic:"bookmark",   t:"First Page",        d:"Log your first reading session", test:(s)=>s.sessions.length>=1 },
+  { id:"page_turner",   ic:"book",       t:"Page Turner",       d:"Read 100 pages",                 test:(s,d)=>d.totalPages>=100 },
+  { id:"thousand",      ic:"layers",     t:"1,000 Pages",       d:"Read 1,000 pages",               test:(s,d)=>d.totalPages>=1000 },
+  { id:"night_owl",     ic:"moon",       t:"Night Owl",         d:"Finish a session after 11pm",    test:(s)=>s.sessions.some(x=>new Date(x.createdAt).getHours()>=23||new Date(x.createdAt).getHours()<4) },
+  { id:"early_bird",    ic:"sunrise",    t:"Dawn Reader",       d:"Read before 7am",                test:(s)=>s.sessions.some(x=>{const h=new Date(x.createdAt).getHours();return h>=4&&h<7}) },
+  { id:"weekend",       ic:"calendar",   t:"Weekend Warrior",   d:"Read on a Saturday and Sunday",  test:(s)=>{const ds=new Set(s.sessions.map(x=>new Date(x.date+"T12:00").getDay()));return ds.has(0)&&ds.has(6)} },
+  { id:"streak7",       ic:"flame",      t:"One Week Ritual",   d:"7-day reading streak",           test:(s,d)=>d.bestStreak>=7 },
+  { id:"streak30",      ic:"award",      t:"30-Day Streak",     d:"30-day reading streak",          test:(s,d)=>d.bestStreak>=30 },
+  { id:"finisher",      ic:"flag",       t:"The Finisher",      d:"Finish your first book",         test:(s,d)=>d.finished>=1 },
+  { id:"five_books",    ic:"archive",    t:"Handful of Worlds", d:"Finish 5 books",                 test:(s,d)=>d.finished>=5 },
+  { id:"marathon",      ic:"zap",        t:"Book Marathon",     d:"A single session over 90 min",   test:(s)=>s.sessions.some(x=>x.minutes>=90) },
+  { id:"explorer",      ic:"compass",    t:"Genre Explorer",    d:"Finish books in 3 genres",       test:(s,d)=>d.genresFinished>=3 },
+  { id:"annotator",     ic:"pen",        t:"Annotation Master", d:"Save 10 notes or quotes",        test:(s)=>s.journal.length>=10 },
+  { id:"critic",        ic:"star",       t:"The Critic",        d:"Rate and review 3 books",        test:(s)=>s.books.filter(b=>b.rating&&b.review).length>=3 },
+  { id:"collector",     ic:"book_open",  t:"The Collector",     d:"20 books in your library",       test:(s)=>s.books.length>=20 },
 ];
 
+/* session mid-read mood — kept as emoji intentionally */
 const SESSION_MOODS = [
   ["😌","calm"],["🤯","mind-blown"],["🥹","moved"],["😱","gripped"],["😴","sleepy"],["🤔","thoughtful"]
+];
+
+/* ================================================================
+   JOURNAL — prompt sets per reflection kind
+================================================================ */
+const JOURNAL_KINDS = [
+  { id: "reflection", label: "Reflection", ic: "feather",   hint: "How did this book make you feel — honestly?" },
+  { id: "character",  label: "Character",  ic: "eye",       hint: "Someone in these pages who stayed with you." },
+  { id: "analysis",   label: "Analysis",   ic: "compass",   hint: "Engage with the craft, the argument, the structure." },
+  { id: "quote",      label: "Quote",      ic: "bookmark",  hint: "The line you'd copy into a notebook." },
+];
+
+const EMOTIONAL_PROMPTS = [
+  "How did this book make you feel — honestly?",
+  "What was happening in your life while you read this?",
+  "Where did you have to put the book down and just sit with it?",
+  "What feeling did the ending leave you with?",
+  "If this book were a season, which one — and why?",
+];
+
+const CHARACTER_PROMPTS = [
+  "Which character felt like someone you know?",
+  "Whose choices would you have made differently?",
+  "Who did you find yourself rooting for, and why?",
+  "Which character's flaws felt a little too familiar?",
+  "Who changed the most — and did you believe it?",
+];
+
+const ANALYSIS_PROMPTS = [
+  "What is this book really about, beneath the plot?",
+  "How does the structure or pacing serve the theme?",
+  "What would you argue with a critic — or the author — about?",
+  "What technique did the author use that stood out to you?",
+  "What does this book borrow from, or push back against?",
 ];

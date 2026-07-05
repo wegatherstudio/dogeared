@@ -1,6 +1,7 @@
 /* ================================================================
-   DOGEAR — api.js  (Open Library search & metadata, CORS-friendly)
-   + sharecard renderer
+   DOGEARED — api.js  (Open Library search & metadata)
+   + share-card renderer: 9:16, solid color (no gradients),
+   with a transparent, cover-free export mode.
 ================================================================ */
 "use strict";
 
@@ -54,136 +55,130 @@ async function olWorkDescription(olKey) {
 }
 
 /* ================================================================
-   SHARE CARD — gradient, premium, Strava-style. 1080×1350 canvas.
+   SHARE CARD — 9:16, solid color per theme, premium & flat.
+   opts: {
+     theme, kind:'book'|'wrap', book, coverUrl, kicker, title, subtitle,
+     stars, stats:[[n,l],...], profileName, transparent:boolean
+   }
+   Canvas is 1080×1920. In transparent mode: no fill, no cover, no fold —
+   just the wordmark, title, and stats, meant to overlay on your own photo.
 ================================================================ */
 const CARD_THEMES = {
-  dawn:   ["#BDAD25", "#A0732F", "#C25E36"],
-  dusk:   ["#3E2E56", "#7A3A52", "#C25E36"],
-  forest: ["#1E3A2F", "#3E5E3A", "#BDAD25"],
-  night:  ["#17140E", "#2A2419", "#4A3C22"],
-  paper:  ["#F3EFE1", "#E7DFC8", "#D8CBA6"],
+  dawn:   "#BDAD25",
+  dusk:   "#7A3A52",
+  forest: "#2F4F3E",
+  night:  "#1C1710",
+  paper:  "#EFECDB",
 };
 
 function drawShareCard(canvas, opts) {
-  // opts: {theme, kind:'book'|'wrap', book, stats, profileName, streak, dark}
+  canvas.width = 1080; canvas.height = 1920;
   const ctx = canvas.getContext("2d");
   const W = canvas.width, H = canvas.height;
-  const cols = CARD_THEMES[opts.theme] || CARD_THEMES.dawn;
-  const paperTheme = opts.theme === "paper";
-  const INK = paperTheme ? "#2C261D" : "#FFF7E8";
-  const SUB = paperTheme ? "rgba(44,38,29,.62)" : "rgba(255,247,232,.72)";
+  const transparent = !!opts.transparent;
+  const solid = CARD_THEMES[opts.theme] || CARD_THEMES.dawn;
+  const isPaper = opts.theme === "paper";
+  const INK = transparent ? "#2C261D" : (isPaper ? "#2C261D" : "#FFF7E8");
+  const SUB = transparent ? "rgba(44,38,29,.7)" : (isPaper ? "rgba(44,38,29,.62)" : "rgba(255,247,232,.72)");
 
-  // gradient bg
-  const grad = ctx.createLinearGradient(0, 0, W, H);
-  grad.addColorStop(0, cols[0]); grad.addColorStop(0.55, cols[1]); grad.addColorStop(1, cols[2]);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, W, H);
+  ctx.clearRect(0, 0, W, H);
+  if (!transparent) {
+    ctx.fillStyle = solid;
+    ctx.fillRect(0, 0, W, H);
+    // dog-ear fold — solid, no gradient
+    ctx.fillStyle = "rgba(255,255,255,0.88)";
+    ctx.beginPath(); ctx.moveTo(W - 120, 0); ctx.lineTo(W, 0); ctx.lineTo(W, 120); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,0.22)";
+    ctx.beginPath(); ctx.moveTo(W - 120, 0); ctx.lineTo(W - 120, 120); ctx.lineTo(W, 120); ctx.closePath(); ctx.fill();
+  }
 
-  // soft radial glows
-  const glow = (x, y, r, c) => {
-    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-    g.addColorStop(0, c); g.addColorStop(1, "transparent");
-    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  };
-  glow(W * 0.85, H * 0.1, 520, "rgba(255,255,255,0.16)");
-  glow(W * 0.1, H * 0.85, 620, "rgba(0,0,0,0.18)");
-
-  // dog-ear fold
-  ctx.fillStyle = "rgba(255,255,255,0.9)";
-  ctx.beginPath(); ctx.moveTo(W - 130, 0); ctx.lineTo(W, 0); ctx.lineTo(W, 130); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = "rgba(0,0,0,0.22)";
-  ctx.beginPath(); ctx.moveTo(W - 130, 0); ctx.lineTo(W - 130, 130); ctx.lineTo(W, 130); ctx.closePath(); ctx.fill();
-
-  const finishText = () => {
+  const finishText = (coverBottom) => {
     ctx.textAlign = "center";
-
-    // header
     ctx.fillStyle = SUB;
     ctx.font = "500 26px Outfit, Arial, sans-serif";
-    ctx.fillText((opts.kicker || "READING LOG").toUpperCase().split("").join("\u200A"), W / 2, 96);
+    ctx.fillText((opts.kicker || "READING LOG").toUpperCase().split("").join("\u200A"), W / 2, 100);
 
-    // title block
+    const titleY = transparent ? 260 : coverBottom + 90;
     ctx.fillStyle = INK;
-    ctx.font = "300 64px Newsreader, Georgia, serif";
-    wrapT(ctx, opts.title, W / 2, opts.kind === "book" ? 782 : 300, W - 200, 72);
+    ctx.font = "300 60px Newsreader, Georgia, serif";
+    wrapT(ctx, opts.title, W / 2, titleY, W - 190, 68);
+    let y2 = titleY + 68;
     if (opts.subtitle) {
       ctx.fillStyle = SUB;
-      ctx.font = "300 34px Outfit, Arial, sans-serif";
-      ctx.fillText(opts.subtitle, W / 2, opts.kind === "book" ? 866 : 372);
+      ctx.font = "300 32px Outfit, Arial, sans-serif";
+      ctx.fillText(opts.subtitle, W / 2, y2 + 20);
+      y2 += 20;
     }
     if (opts.stars) {
-      ctx.fillStyle = paperTheme ? "#A0732F" : "#FFE9A8";
-      ctx.font = "44px Georgia, serif";
-      let st = "";
-      for (let i = 1; i <= 5; i++) st += i <= opts.stars ? "★" : "☆";
-      ctx.fillText(st, W / 2, 934);
+      ctx.fillStyle = isPaper || transparent ? "#A0732F" : "#FFE9A8";
+      ctx.font = "42px Georgia, serif";
+      let st = ""; for (let i = 1; i <= 5; i++) st += i <= opts.stars ? "★" : "☆";
+      ctx.fillText(st, W / 2, y2 + 80);
+      y2 += 80;
     }
 
-    // stat grid (2x2)
+    // stat grid (2x2), positioned relative to remaining space
     const stats = opts.stats.slice(0, 4);
-    const gx = [W * 0.28, W * 0.72], gy = [1042, 1170];
+    const gridTop = Math.max(y2 + 170, transparent ? 620 : coverBottom + 420);
+    const gx = [W * 0.28, W * 0.72], gy = [gridTop, gridTop + 150];
     stats.forEach(([n, l], i) => {
       const x = gx[i % 2], y = gy[Math.floor(i / 2)];
       ctx.fillStyle = INK;
-      ctx.font = "300 60px Newsreader, Georgia, serif";
+      ctx.font = "300 58px Newsreader, Georgia, serif";
       ctx.fillText(String(n), x, y);
       ctx.fillStyle = SUB;
-      ctx.font = "400 23px Outfit, Arial, sans-serif";
-      ctx.fillText(String(l).toUpperCase(), x, y + 38);
+      ctx.font = "400 22px Outfit, Arial, sans-serif";
+      ctx.fillText(String(l).toUpperCase(), x, y + 36);
     });
 
     // footer
-    ctx.strokeStyle = paperTheme ? "rgba(44,38,29,.3)" : "rgba(255,247,232,.4)";
+    ctx.strokeStyle = SUB;
+    ctx.globalAlpha = 0.35;
     ctx.setLineDash([2, 9]); ctx.beginPath();
-    ctx.moveTo(150, H - 96); ctx.lineTo(W - 150, H - 96); ctx.stroke(); ctx.setLineDash([]);
+    ctx.moveTo(140, H - 110); ctx.lineTo(W - 140, H - 110); ctx.stroke(); ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
     ctx.fillStyle = SUB;
     ctx.font = "400 26px Outfit, Arial, sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText(`@${opts.profileName || "reader"}`, 96, H - 40);
+    ctx.fillText(`@${opts.profileName || "reader"}`, 96, H - 52);
     ctx.textAlign = "right";
     ctx.font = "300 28px Newsreader, Georgia, serif";
-    ctx.fillText("D O G E A R", W - 96, H - 40);
+    ctx.fillText("D O G E A R E D", W - 96, H - 52);
+
+    opts.onDone && opts.onDone();
   };
 
-  if (opts.kind === "book") {
-    const cw = 330, ch = 495, cx = W / 2 - cw / 2, cy = 170;
+  if (opts.kind === "book" && !transparent) {
+    const cw = 400, ch = 600, cx = W / 2 - cw / 2, cy = 150;
     ctx.save();
-    ctx.shadowColor = "rgba(0,0,0,.45)"; ctx.shadowBlur = 60; ctx.shadowOffsetY = 24;
+    ctx.shadowColor = "rgba(0,0,0,.4)"; ctx.shadowBlur = 50; ctx.shadowOffsetY = 20;
     if (opts.coverUrl) {
       const img = new Image();
       img.crossOrigin = "anonymous";
-      img.onload = () => {
-        roundImg(ctx, img, cx, cy, cw, ch, 18);
-        ctx.restore(); finishText();
-        opts.onDone && opts.onDone();
-      };
-      img.onerror = () => { placeholderCover(); ctx.restore(); finishText(); opts.onDone && opts.onDone(); };
+      img.onload = () => { roundImg(ctx, img, cx, cy, cw, ch, 18); ctx.restore(); finishText(cy + ch); };
+      img.onerror = () => { placeholder(); ctx.restore(); finishText(cy + ch); };
       img.src = opts.coverUrl;
       return;
     }
-    placeholderCover();
+    placeholder();
     ctx.restore();
-
-    function placeholderCover() {
-      const hue = GENRE_HUES[(opts.book?.g || [])[0]] || ["#6B5B3F", "#2E2618"];
-      const g2 = ctx.createLinearGradient(cx, cy, cx + cw, cy + ch);
-      g2.addColorStop(0, hue[0]); g2.addColorStop(1, hue[1]);
-      rounded(ctx, cx, cy, cw, ch, 18); ctx.fillStyle = g2; ctx.fill();
+    finishText(cy + ch);
+    function placeholder() {
+      const hue = GENRE_HUES[(opts.book?.g || [])[0]] || "#6B5B3F";
+      rounded(ctx, cx, cy, cw, ch, 18); ctx.fillStyle = hue; ctx.fill();
       ctx.fillStyle = "#FFF7E8";
-      ctx.font = "italic 300 38px Newsreader, Georgia, serif";
+      ctx.font = "italic 300 36px Newsreader, Georgia, serif";
       ctx.textAlign = "center";
-      wrapT(ctx, opts.title, W / 2, cy + ch / 2 - 20, cw - 70, 46);
+      wrapT(ctx, opts.title, W / 2, cy + ch / 2 - 20, cw - 70, 44);
     }
+  } else {
+    finishText(0);
   }
-  finishText();
 }
 function rounded(ctx, x, y, w, h, r) {
   ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
 }
 function roundImg(ctx, img, x, y, w, h, r) {

@@ -19,6 +19,7 @@ const defaultState = () => ({
   affinity: { genres: {}, moods: {} }, // learned weights from behavior
   seenFeed: [],  // catalog ids already shown/skipped
   unlocked: {},  // achievement id -> ISO date
+  wrapsViewed: {}, // "YYYY-MM" -> true
   settings: { theme: "light" },
 });
 
@@ -32,6 +33,7 @@ function loadState() {
     return Object.assign(defaultState(), s, {
       affinity: Object.assign({ genres: {}, moods: {} }, s.affinity),
       settings: Object.assign({ theme: "light" }, s.settings),
+      wrapsViewed: Object.assign({}, s.wrapsViewed),
     });
   } catch { return defaultState(); }
 }
@@ -193,7 +195,7 @@ function scoreBook(cb) {
 }
 function recommendationFeed(n = 10) {
   const inLib = new Set(S.books.map((b) => b.catalogId).filter(Boolean));
-  const pool = CATALOG.filter((c) => !inLib.has(c.id));
+  const pool = CATALOG.filter((c) => !inLib.has(c.id) && !S.seenFeed.includes(c.id));
   return pool.map((c) => [scoreBook(c), c]).sort((a, b) => b[0] - a[0]).slice(0, n).map((x) => x[1]);
 }
 function whyForYou(cb) {
@@ -304,8 +306,8 @@ async function resolveCatalogCover(cb) {
 
 /* generated cover markup */
 function genCoverHTML(item, cls = "cover") {
-  const hue = GENRE_HUES[(item.g || [])[0]] || ["#6B5B3F", "#2E2618"];
-  return `<div class="${cls} gencover" style="background:linear-gradient(160deg,${hue[0]},${hue[1]})">
+  const hue = GENRE_HUES[(item.g || [])[0]] || "#6B5B3F";
+  return `<div class="${cls} gencover" style="background:${hue}">
     <div class="gt serif">${esc(item.t)}</div><div class="ga">${esc(item.a || "")}</div>
   </div>`;
 }
@@ -314,6 +316,95 @@ function coverHTML(item, cls = "cover") {
   const url = item.cover || coverCache[key]?.url;
   if (url) return `<img class="${cls}" src="${url}" alt="" loading="lazy" onerror="this.outerHTML=genCoverHTML(${esc(JSON.stringify({t:item.t,a:item.a,g:item.g}))},'${cls}')">`;
   return genCoverHTML(item, cls);
+}
+
+/* ---------------- images (journal attachments) ---------------- */
+function fileToDataURL(file, maxDim = 640, quality = 0.76) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const c = document.createElement("canvas");
+        c.width = Math.round(img.width * scale);
+        c.height = Math.round(img.height * scale);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ================================================================
+   MONTHLY WRAP — Spotify-Wrapped-style recap, computed on demand
+================================================================ */
+const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+const monthLabel = (ym) => {
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+};
+function prevMonthKey(ym) {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 2, 1);
+  return monthKey(d);
+}
+
+function computeMonthStats(ym) {
+  const sessions = S.sessions.filter((s) => s.date.startsWith(ym));
+  const minutes = sessions.reduce((a, s) => a + s.minutes, 0);
+  const pages = sessions.reduce((a, s) => a + Math.max(0, (s.endPage || 0) - (s.startPage || 0)), 0);
+  const bookIds = new Set(sessions.map((s) => s.bookId));
+  const booksTouched = S.books.filter((b) => bookIds.has(b.id));
+  const finished = S.books.filter((b) => b.shelf === "finished" && (b.finishedAt || "").startsWith(ym));
+
+  // best streak fully inside this month (approx via consecutive qualifying days)
+  const daySet = new Set();
+  sessions.forEach((s) => { if (s.minutes >= 5 || true) {} });
+  const byDate = {};
+  sessions.forEach((s) => { byDate[s.date] = (byDate[s.date] || 0) + s.minutes; });
+  const qualDays = Object.keys(byDate).filter((d) => byDate[d] >= 5).sort();
+  let best = 0, cur = 0, prev = null;
+  for (const d of qualDays) {
+    cur = prev && (new Date(d) - new Date(prev)) / 86400000 === 1 ? cur + 1 : 1;
+    best = Math.max(best, cur); prev = d;
+  }
+
+  const genreCount = {};
+  finished.forEach((b) => (b.g || []).forEach((g) => genreCount[g] = (genreCount[g] || 0) + 1));
+  const topGenres = Object.entries(genreCount).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([g]) => g);
+
+  const topBook = finished.slice().sort((a, b) => (b.rating || 0) - (a.rating || 0))[0]
+    || booksTouched.slice().sort((a, b) => bookStats(b.id).minutes - bookStats(a.id).minutes)[0] || null;
+
+  const quotesThisMonth = S.journal.filter((j) => j.kind === "quote" && (j.createdAt || "").startsWith(ym));
+  const quote = quotesThisMonth.length ? quotesThisMonth[quotesThisMonth.length - 1] : null;
+
+  return {
+    ym, label: monthLabel(ym), minutes, pages, sessions: sessions.length,
+    finished, booksTouched, bestStreak: best, topGenres, topBook, quote,
+  };
+}
+
+/* Is a wrap ready & unviewed? Only past (completed) months, only after joining. */
+function pendingWrapMonth() {
+  if (!S.profile?.joinedAt) return null;
+  const now = new Date();
+  const thisYm = monthKey(now);
+  let ym = prevMonthKey(thisYm);
+  const joinYm = monthKey(new Date(S.profile.joinedAt));
+  if (ym < joinYm) return null;
+  if (S.wrapsViewed?.[ym]) return null;
+  return ym;
+}
+function markWrapViewed(ym) {
+  S.wrapsViewed = S.wrapsViewed || {};
+  S.wrapsViewed[ym] = true;
+  saveState();
 }
 
 /* ---------------- backup ---------------- */
