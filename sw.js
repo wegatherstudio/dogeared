@@ -1,9 +1,9 @@
-/* Dogear service worker — offline app shell caching */
-const CACHE = "dogear-v1";
+/* Dogeared service worker — offline app shell caching */
+const CACHE = "dogeared-v2";
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest",
   "./css/styles.css",
-  "./js/catalog.js", "./js/store.js", "./js/api.js", "./js/app.js",
+  "./js/icons.js", "./js/catalog.js", "./js/store.js", "./js/api.js", "./js/app.js",
   "./icons/logo.png", "./icons/icon-192.png", "./icons/icon-512.png",
   "./icons/favicon.png", "./icons/apple-touch-icon.png"
 ];
@@ -26,7 +26,6 @@ self.addEventListener("fetch", (e) => {
       }).catch(() => caches.match("./index.html")))
     );
   } else {
-    // Open Library API + covers + fonts: network-first, cache fallback
     e.respondWith(
       fetch(e.request).then((res) => {
         const copy = res.clone();
