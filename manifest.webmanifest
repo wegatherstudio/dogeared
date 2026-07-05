@@ -1,7 +1,7 @@
 {
-  "name": "Dogear — Build a Reading Life",
-  "short_name": "Dogear",
-  "description": "A premium, social reading companion. Track sessions like workouts, discover books made for you, and turn reading into a ritual.",
+  "name": "Dogeared — Build a Reading Life",
+  "short_name": "Dogeared",
+  "description": "A premium, social reading companion. Track sessions like workouts, reflect in a private journal, discover books made for you, and turn reading into a ritual.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
