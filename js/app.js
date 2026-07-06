@@ -198,7 +198,7 @@ function navigate(v) {
   render();
   updateCtaState();
   if (v !== "discover") window.scrollTo({ top: 0 });
-  if (typeof pinDockToVisualViewport === "function") setTimeout(pinDockToVisualViewport, 60);
+  if (typeof setAppHeight === "function") setTimeout(setAppHeight, 60);
 }
 function updateCtaState() {
   const cta = $(".tabbar .timer-tab");
@@ -386,12 +386,12 @@ function renderDiscover() {
 
   $("[data-more]", feedRoot)?.addEventListener("click", (e) => appendMoreFeed(e.currentTarget));
 
-  // extra safety net for the dock-pinning fix: Discover's snap-swiping is
-  // exactly the gesture most likely to trigger Safari's toolbar animation
+  // extra safety net: Discover's snap-swiping is exactly the gesture most
+  // likely to trigger Safari's toolbar animation, so re-measure often here
   let _dockPinRaf = null;
   feedEl.addEventListener("scroll", () => {
     if (_dockPinRaf) return;
-    _dockPinRaf = requestAnimationFrame(() => { pinDockToVisualViewport(); _dockPinRaf = null; });
+    _dockPinRaf = requestAnimationFrame(() => { setAppHeight(); _dockPinRaf = null; });
   }, { passive: true });
 }
 
@@ -2334,22 +2334,27 @@ pushBackGuard();
    directly via the visualViewport API (which fires continuously
    during the address-bar animation, not just after) and nudges the
    dock to match it in real time, on every device that supports it. */
-function pinDockToVisualViewport() {
-  const dock = document.querySelector("nav.tabbar");
-  if (!dock || !window.visualViewport) return;
-  const vv = window.visualViewport;
-  const gap = window.innerHeight - (vv.height + vv.offsetTop);
-  // Safari's address bar is at most ~60px — a bigger gap means something else
-  // (an on-screen keyboard, etc.), which isn't the bug this targets.
-  dock.style.transform = (gap > 0.5 && gap < 80) ? `translateY(-${gap}px)` : "";
+/* ================================================================
+   REAL VIEWPORT HEIGHT — measured directly in JS, not guessed via CSS
+   units. This is deliberately more forceful than relying on dvh or on
+   "position: fixed; bottom: 0" being interpreted correctly, because on
+   some iOS builds that interpretation itself is unreliable. Instead,
+   the dock's position is now a direct function of a number WE measured
+   a moment ago — not the browser's own judgment about where "the
+   bottom" is. --app-height updates continuously as the visible area
+   changes (address bar animating, keyboard, rotation, etc.). */
+function setAppHeight() {
+  const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  document.documentElement.style.setProperty("--app-height", `${h}px`);
 }
+setAppHeight();
+window.addEventListener("load", setAppHeight);
+window.addEventListener("resize", setAppHeight);
+window.addEventListener("orientationchange", () => setTimeout(setAppHeight, 120));
 if (window.visualViewport) {
-  window.visualViewport.addEventListener("resize", pinDockToVisualViewport);
-  window.visualViewport.addEventListener("scroll", pinDockToVisualViewport);
+  window.visualViewport.addEventListener("resize", setAppHeight);
+  window.visualViewport.addEventListener("scroll", setAppHeight);
 }
-window.addEventListener("load", pinDockToVisualViewport);
-window.addEventListener("orientationchange", () => setTimeout(pinDockToVisualViewport, 50));
-pinDockToVisualViewport();
 
 function boot() {
   $$("nav.tabbar [data-view]").forEach((b) => b.addEventListener("click", () => navigate(b.dataset.view)));
