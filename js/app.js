@@ -1091,7 +1091,159 @@ const elapsedMs = (t) => t ? t.acc + (t.paused ? 0 : Date.now() - t.last) : 0;
 function startTimer(bookId) {
   const ex = getTimer();
   if (ex && ex.bookId !== bookId) { toast("Finish your open session first."); return; }
-  if (!ex) setTimer({ bookId, last: Date.now(), acc: 0, paused: false, mood: null });
+  if (!ex) {
+    setTimer({ bookId, last: Date.now(), acc: 0, paused: false, mood: null, notified60: false });
+    maybeAskNotificationPermission();
+    updateSessionNotification();
+    updateCtaState();
+  }
+}
+
+/* ---------------- notifications: permission, persistent session control,
+   and the 60-minute "still reading?" check-in ----------------
+   Honest limitation: this works while the browser/PWA process is still
+   alive (foreground or lightly backgrounded). There's no server here to
+   push to a fully-suspended, locked phone — that would need a real push
+   backend, which this local-first app intentionally doesn't have. */
+function notifSupported() {
+  return "Notification" in window && "serviceWorker" in navigator;
+}
+function maybeAskNotificationPermission() {
+  if (!notifSupported() || S.settings.notificationsAsked) return;
+  S.settings.notificationsAsked = true; saveState();
+  if (Notification.permission !== "default") return;
+  openSheet(`
+    <h2 style="text-align:center;margin-bottom:6px">Nudge you if you drift off?</h2>
+    <p class="muted" style="text-align:center">Dogeared can check in after an hour of reading, and show a small control to pause or finish your session — even from your lock screen notifications.</p>
+    <div class="btn-row" style="justify-content:center">
+      <button class="btn solid" id="notif-yes">Allow notifications</button>
+      <button class="btn ghost" id="notif-no">Not now</button>
+    </div>
+  `, (sheet) => {
+    $("#notif-yes", sheet).addEventListener("click", () => {
+      Notification.requestPermission().then((perm) => {
+        closeSheet();
+        toast(perm === "granted" ? "Notifications on." : "No worries — you can enable this later in your browser settings.");
+        if (perm === "granted") updateSessionNotification();
+      });
+    });
+    $("#notif-no", sheet).addEventListener("click", () => closeSheet());
+  });
+}
+function canNotify() { return notifSupported() && Notification.permission === "granted"; }
+
+async function updateSessionNotification() {
+  if (!canNotify()) return;
+  const t = getTimer();
+  if (!t) return;
+  const book = S.books.find((b) => b.id === t.bookId);
+  if (!book) return;
+  const mins = Math.round(elapsedMs(t) / 60000);
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    reg.showNotification("Dogeared session", {
+      tag: "dogeared-session", renotify: false, silent: true, requireInteraction: true,
+      icon: "icons/icon-192.png", badge: "icons/icon-192.png",
+      body: `${book.t} · ${fmtHM(mins)} ${t.paused ? "· paused" : ""}`,
+      actions: [
+        { action: "pause", title: t.paused ? "Resume" : "Pause" },
+        { action: "finish", title: "Finish" },
+      ],
+    });
+  } catch {}
+}
+async function clearSessionNotifications() {
+  if (!notifSupported()) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const list = await reg.getNotifications({ tag: "dogeared-session" });
+    list.forEach((n) => n.close());
+    const list2 = await reg.getNotifications({ tag: "dogeared-reminder" });
+    list2.forEach((n) => n.close());
+  } catch {}
+}
+async function notifyStillReading(book) {
+  if (!canNotify()) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    reg.showNotification("Still reading?", {
+      tag: "dogeared-reminder", requireInteraction: true,
+      icon: "icons/icon-192.png", badge: "icons/icon-192.png",
+      body: `Your timer for "${book.t}" has been running for an hour.`,
+      actions: [
+        { action: "dismiss", title: "Still reading" },
+        { action: "finish", title: "Finish session" },
+      ],
+    });
+  } catch {}
+}
+function showStillReadingModal(book) {
+  openSheet(`
+    <h2 style="text-align:center;margin-bottom:6px">Still reading?</h2>
+    <p class="muted" style="text-align:center">Your timer for "${esc(book.t)}" has been running for an hour.</p>
+    <div class="btn-row" style="justify-content:center">
+      <button class="btn ghost" id="sr-continue">Still reading</button>
+      <button class="btn solid" id="sr-finish">Finish session</button>
+    </div>
+  `, (sheet) => {
+    $("#sr-continue", sheet).addEventListener("click", () => closeSheet());
+    $("#sr-finish", sheet).addEventListener("click", () => {
+      closeSheet(); navigate("timer");
+      const t = getTimer();
+      if (t) { const b = S.books.find((x) => x.id === t.bookId); if (b) finishSessionFlow(b); }
+    });
+  });
+}
+
+/* global heartbeat — runs for as long as this tab/PWA stays open, checking
+   the running timer every 60s to refresh the persistent notification and
+   fire the one-hour check-in, regardless of which page is showing. */
+let _heartbeat = null;
+function startHeartbeat() {
+  clearInterval(_heartbeat);
+  _heartbeat = setInterval(() => {
+    const t = getTimer();
+    if (!t) return;
+    updateSessionNotification();
+    const mins = elapsedMs(t) / 60000;
+    if (mins >= 60 && !t.notified60) {
+      t.notified60 = true; setTimer(t);
+      const book = S.books.find((b) => b.id === t.bookId);
+      if (book) {
+        if (document.visibilityState === "visible") showStillReadingModal(book);
+        else notifyStillReading(book);
+      }
+    }
+  }, 60000);
+}
+
+/* handle taps on notification actions, whether the app was already open
+   (message from the service worker) or just cold-launched (URL param) */
+function handleNotificationAction(action) {
+  const t = getTimer();
+  if (!t) return;
+  if (action === "pause") {
+    if (t.paused) { t.paused = false; t.last = Date.now(); } else { t.acc += Date.now() - t.last; t.paused = true; }
+    setTimer(t);
+    updateSessionNotification();
+    if (currentView === "timer") renderTimer();
+  } else if (action === "finish") {
+    navigate("timer");
+    const book = S.books.find((b) => b.id === t.bookId);
+    if (book) finishSessionFlow(book);
+  }
+}
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    if (e.data?.type === "notification-action") handleNotificationAction(e.data.action);
+  });
+}
+{
+  const notifParam = new URLSearchParams(location.search).get("notif");
+  if (notifParam) {
+    history.replaceState(null, "", location.pathname);
+    window.addEventListener("load", () => setTimeout(() => handleNotificationAction(notifParam), 400));
+  }
 }
 
 function renderTimer() {
@@ -1167,6 +1319,7 @@ function renderTimer() {
     const c = getTimer();
     if (c.paused) { c.paused = false; c.last = Date.now(); } else { c.acc += Date.now() - c.last; c.paused = true; }
     setTimer(c); renderTimer();
+    updateSessionNotification();
   });
   $("#tq").addEventListener("click", () => openJournalEditor({ bookId: book.id, presetKind: "quote" }));
   $("#tf").addEventListener("click", () => finishSessionFlow(book));
@@ -1206,6 +1359,8 @@ function finishSessionFlow(book) {
       });
       if (endPage > (book.currentPage || 0)) book.currentPage = endPage;
       setTimer(null);
+      clearSessionNotifications();
+      updateCtaState();
 
       let xp = minutes * XP_RULES.perMinute + pagesRead * XP_RULES.perPage;
       if (firstToday) xp += XP_RULES.firstSessionOfDay;
@@ -1219,7 +1374,7 @@ function finishSessionFlow(book) {
       showSummary({ book, minutes, pagesRead, xp, finished, fresh, prevStreak });
     });
     $("#fs-x", sheet).addEventListener("click", () => {
-      if (confirm("Let this session go unrecorded?")) { setTimer(null); closeSheet(); render(); }
+      if (confirm("Let this session go unrecorded?")) { setTimer(null); clearSessionNotifications(); updateCtaState(); closeSheet(); render(); }
     });
   });
 }
@@ -1430,7 +1585,6 @@ function openShareCard(cfg) {
     <h2 style="text-align:center;margin-bottom:4px">Share it beautifully</h2>
     <p class="muted" style="text-align:center">Made for Stories, Threads, and group chats.</p>
     <div class="share-wrap ${style === "transparent" ? "preview-dark" : ""}" id="share-wrap-el" style="margin-top:12px"><canvas id="sc"></canvas></div>
-    <p class="muted small" id="sc-transparent-note" style="text-align:center;margin-top:6px;${style === "transparent" ? "" : "display:none"}">Dark backdrop shown for preview only — the saved image is fully transparent.</p>
     <div class="opt-row" id="style-row">
       ${styleDefs.map(([id, label], i) => `<button data-style="${id}" class="${i === 0 ? "active" : ""}">${label}</button>`).join("")}
     </div>
@@ -1445,7 +1599,6 @@ function openShareCard(cfg) {
       style = b.dataset.style;
       $$("[data-style]", sheet).forEach((x) => x.classList.toggle("active", x === b));
       $("#share-wrap-el", sheet).classList.toggle("preview-dark", style === "transparent");
-      $("#sc-transparent-note", sheet).style.display = style === "transparent" ? "" : "none";
       build(canvas);
     }));
     $("#sc-dl", sheet).addEventListener("click", () => {
@@ -1466,6 +1619,40 @@ function openShareCard(cfg) {
       }, "image/png");
     });
   });
+}
+
+/* Captures just the .wrap-body content (no progress bar, no close button,
+   no prev/next controls) and downloads it as a JPG — pixel-for-pixel what
+   the user sees on that slide. */
+async function saveWrapSlideAsImage(viewerEl, variant, btn) {
+  const target = $(".wrap-body", viewerEl);
+  if (!target || typeof html2canvas === "undefined") { toast("Couldn't save the image — try again."); return; }
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = "Saving…";
+  try {
+    const bg = getComputedStyle(viewerEl).backgroundColor || "#16130E";
+    const canvas = await html2canvas(target, {
+      backgroundColor: bg,
+      scale: Math.min(3, window.devicePixelRatio || 2),
+      useCORS: true,
+      logging: false,
+    });
+    canvas.toBlob((blob) => {
+      if (!blob) { toast("Couldn't save the image — try again."); return; }
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `dogeared-wrap-${variant || "slide"}.jpg`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+      toast("Saved.");
+    }, "image/jpeg", 0.92);
+  } catch {
+    toast("Couldn't save the image — try again.");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
 }
 
 /* ================================================================
@@ -1549,7 +1736,7 @@ function openMonthlyWrap(ym) {
     return s;
   }
 
-  const slideVariants = ["intro", "stats", "collage", "quote", "compare", "recap"];
+  const slideVariants = [null, "stats", "collage", "quote", "compare", "recap"];
 
   const el = document.createElement("div");
   el.className = "wrap-viewer";
@@ -1566,7 +1753,7 @@ function openMonthlyWrap(ym) {
         <button class="tap-zone right" aria-label="Next"></button>
       </div>
       <div class="wrap-foot">
-        ${variant ? `<button class="btn ghost sm" id="wr-share">${icon("share", { size: 14 })} Share this</button>` : "<span></span>"}
+        ${variant ? `<button class="btn ghost sm" id="wr-save">${icon("download", { size: 14 })} Save</button>` : "<span></span>"}
         <div class="btn-row" style="margin:0">
           ${idx > 0 ? `<button class="iconbtn" id="wr-prev">${icon("chev_l", { size: 18 })}</button>` : ""}
           ${idx < slides.length - 1 ? `<button class="iconbtn" id="wr-next">${icon("chev_r", { size: 18 })}</button>` : ""}
@@ -1578,10 +1765,14 @@ function openMonthlyWrap(ym) {
     $(".tap-zone.right", el)?.addEventListener("click", () => go(1));
     $("#wr-prev", el)?.addEventListener("click", () => go(-1));
     $("#wr-next", el)?.addEventListener("click", () => go(1));
-    $("#wr-share", el)?.addEventListener("click", () => openShareCard({ kind: "monthwrap", ms, prevMs, quiet, variant }));
-    $("#wg-range", el)?.addEventListener("input", (e) => { newGoal = +e.target.value; $("#wg-n", el).textContent = newGoal; });
+    $("#wr-save", el)?.addEventListener("click", (e) => saveWrapSlideAsImage(el, variant, e.currentTarget));
+    $("#wg-range", el)?.addEventListener("input", (e) => {
+      newGoal = +e.target.value;
+      $("#wg-n", el).textContent = newGoal;
+      S.profile.dailyGoal = newGoal; // live — reflected in Your taste immediately as the user drags
+      saveState();
+    });
     $("#wg-save", el)?.addEventListener("click", () => {
-      S.profile.dailyGoal = newGoal; saveState();
       toast(`Daily goal set to ${newGoal} pages — updated in Your taste too.`);
       finish();
     });
@@ -1845,6 +2036,7 @@ function boot() {
   $(".tabbar .cta").addEventListener("click", () => navigate("timer"));
   if (getTimer()) navigate("timer");
   else navigate("home");
+  startHeartbeat();
 }
 
 if (!S.profile) {

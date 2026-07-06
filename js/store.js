@@ -23,7 +23,7 @@ const defaultState = () => ({
   shareHistory: [], // past generated share cards, for re-sharing
   remoteCatalog: [], // books discovered live via Open Library, merged into the rec pool
   readerProfile: null, // { weekKey, text, generatedAt } — a locally-computed reading-habits summary
-  settings: { theme: "light" },
+  settings: { theme: "light", notificationsAsked: false },
 });
 
 let S = loadState();
@@ -35,7 +35,7 @@ function loadState() {
     const s = JSON.parse(raw);
     return Object.assign(defaultState(), s, {
       affinity: Object.assign({ genres: {}, moods: {} }, s.affinity),
-      settings: Object.assign({ theme: "light" }, s.settings),
+      settings: Object.assign({ theme: "light", notificationsAsked: false }, s.settings),
       wrapsViewed: Object.assign({}, s.wrapsViewed),
       shareHistory: Array.isArray(s.shareHistory) ? s.shareHistory : [],
       remoteCatalog: Array.isArray(s.remoteCatalog) ? s.remoteCatalog : [],
@@ -397,7 +397,7 @@ function genCoverHTML(item, cls = "cover") {
 function coverHTML(item, cls = "cover") {
   const key = coverKeyFor(item);
   const url = item.cover || coverCache[key]?.url;
-  if (url) return `<img class="${cls}" src="${url}" alt="" loading="lazy" onerror="this.outerHTML=genCoverHTML(${esc(JSON.stringify({t:item.t,a:item.a,g:item.g}))},'${cls}')">`;
+  if (url) return `<img class="${cls}" src="${url}" alt="" loading="lazy" crossorigin="anonymous" onerror="this.outerHTML=genCoverHTML(${esc(JSON.stringify({t:item.t,a:item.a,g:item.g}))},'${cls}')">`;
   return genCoverHTML(item, cls);
 }
 
