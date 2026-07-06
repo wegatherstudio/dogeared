@@ -99,8 +99,29 @@ function drawShareCard(canvas, opts) {
     wrapT(ctx, opts.title, W / 2, cy + ch / 2 - 20, cw - 70, 42);
   };
 
-  /* the whole text block, flowing downward from coverBottom (0 if no cover) */
-  const drawTextBlock = (coverBottom) => {
+  /* ---- layout: the whole "cover/shelf + book details + stats" group is
+     vertically centered between the fixed kicker/date zone at top and the
+     fixed name/DOGEARED footer at bottom — same rule for every card type. */
+  const TOP_ZONE_BOTTOM = 150;
+  const BOTTOM_ZONE_TOP = H - 190;
+  const COVER_W = 380, COVER_H = 570;
+  const SHELF_H = 300;
+
+  const titleLH = 64;
+  ctx.font = "300 56px Newsreader, Georgia, serif";
+  const titleLines = wrapLines(ctx, opts.title, W - 190).slice(0, 3);
+
+  const hasShelf = !!(opts.shelfBooks && opts.shelfBooks.length);
+  const hasCover = !hasShelf && (!!opts.coverUrl || !!opts.book);
+  const visualH = hasShelf ? SHELF_H + 34 : hasCover ? COVER_H : 0;
+  const gapToTitle = visualH ? 86 : 0;
+
+  const contentHeight = visualH + gapToTitle + titleLines.length * titleLH
+    + (opts.subtitle ? 56 : 0) + (opts.stars ? 78 : 0) + 356;
+  const startY = TOP_ZONE_BOTTOM + Math.max(0, (BOTTOM_ZONE_TOP - TOP_ZONE_BOTTOM - contentHeight) / 2);
+
+  /* the book-details + stats block, flowing down from a given title Y */
+  const drawTextBlock = (titleY) => {
     ctx.textAlign = "center";
     ctx.fillStyle = SUB;
     ctx.font = "500 24px Outfit, Arial, sans-serif";
@@ -110,11 +131,9 @@ function drawShareCard(canvas, opts) {
       ctx.fillText(opts.dateStr, W / 2, 128);
     }
 
-    let y = coverBottom ? coverBottom + 86 : 260;
+    let y = titleY;
     ctx.fillStyle = INK;
     ctx.font = "300 56px Newsreader, Georgia, serif";
-    const titleLH = 64;
-    const titleLines = wrapLines(ctx, opts.title, W - 190).slice(0, 3);
     titleLines.forEach((line, i) => ctx.fillText(line, W / 2, y + i * titleLH));
     y += (titleLines.length - 1) * titleLH;
 
@@ -146,7 +165,7 @@ function drawShareCard(canvas, opts) {
       ctx.fillText(String(l).toUpperCase(), x, gy_ + 36);
     });
 
-    // footer
+    // footer — always fixed at the bottom, independent of content length
     ctx.strokeStyle = SUB;
     ctx.globalAlpha = 0.35;
     ctx.setLineDash([2, 9]); ctx.beginPath();
@@ -241,25 +260,21 @@ function drawShareCard(canvas, opts) {
   });
 
   if (transparent) {
-    if (opts.shelfBooks?.length) {
-      drawShelf(170, 300, opts.shelfBooks).then(() => drawTextBlock(470));
+    if (hasShelf) {
+      drawShelf(startY, SHELF_H, opts.shelfBooks).then(() => drawTextBlock(startY + visualH + gapToTitle));
     } else {
-      drawTextBlock(0);
+      drawTextBlock(startY);
     }
     return;
   }
 
-  if (opts.shelfBooks) {
+  if (hasShelf) {
     fillBackground(DEFAULT_GRADIENT);
-    if (opts.shelfBooks.length) {
-      drawShelf(170, 300, opts.shelfBooks).then(() => drawTextBlock(470));
-    } else {
-      drawTextBlock(0);
-    }
+    drawShelf(startY, SHELF_H, opts.shelfBooks).then(() => drawTextBlock(startY + visualH + gapToTitle));
     return;
   }
 
-  const cw = 380, ch = 570, cx = W / 2 - cw / 2, cy = 165;
+  const cx = W / 2 - COVER_W / 2;
 
   if (opts.coverUrl) {
     const img = new Image();
@@ -269,15 +284,15 @@ function drawShareCard(canvas, opts) {
       fillBackground(stops);
       ctx.save();
       ctx.shadowColor = "rgba(0,0,0,.4)"; ctx.shadowBlur = 50; ctx.shadowOffsetY = 20;
-      roundImg(ctx, img, cx, cy, cw, ch, 18);
+      roundImg(ctx, img, cx, startY, COVER_W, COVER_H, 18);
       ctx.restore();
-      drawTextBlock(cy + ch);
+      drawTextBlock(startY + visualH + gapToTitle);
     };
     img.onerror = () => {
       const stops = style === "theme" ? themeStopsFromGenre(opts.book) : DEFAULT_GRADIENT;
       fillBackground(stops);
-      drawCoverPlaceholder(cx, cy, cw, ch);
-      drawTextBlock(cy + ch);
+      drawCoverPlaceholder(cx, startY, COVER_W, COVER_H);
+      drawTextBlock(startY + visualH + gapToTitle);
     };
     img.src = opts.coverUrl;
     return;
@@ -285,12 +300,12 @@ function drawShareCard(canvas, opts) {
   if (opts.book) {
     const stops = style === "theme" ? themeStopsFromGenre(opts.book) : DEFAULT_GRADIENT;
     fillBackground(stops);
-    drawCoverPlaceholder(cx, cy, cw, ch);
-    drawTextBlock(cy + ch);
+    drawCoverPlaceholder(cx, startY, COVER_W, COVER_H);
+    drawTextBlock(startY + visualH + gapToTitle);
     return;
   }
   fillBackground(DEFAULT_GRADIENT);
-  drawTextBlock(0);
+  drawTextBlock(startY);
 }
 
 /* ---------------- color extraction: sample the cover, build a gradient from it ---------------- */

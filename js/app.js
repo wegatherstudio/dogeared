@@ -681,8 +681,8 @@ function entryPreviewText(j, max = 130) {
 }
 
 let journalBookQuery = "";
-function renderJournal() {
-  const entries = S.journal
+function journalFilteredEntries() {
+  return S.journal
     .filter((j) => {
       if (journalFilter === "all") { /* pass */ }
       else if (journalFilter === "free") { if (j.bookId) return false; }
@@ -695,6 +695,60 @@ function renderJournal() {
       return true;
     })
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+function journalEntriesListHTML(entries) {
+  if (!entries.length) {
+    return `<div class="card empty">
+      ${logoChip(16, 70)}
+      <div class="serif">${journalBookQuery || journalFilter !== "all" ? "Nothing matches yet." : "The margins are all yours."}</div>
+      <p>${journalBookQuery || journalFilter !== "all" ? "Try a different search or filter." : "Reflections, character notes, close reads, quotes worth keeping — they live here."}</p>
+      ${!journalBookQuery && journalFilter === "all" ? `<button class="btn solid" id="j-first">Write your first entry</button>` : ""}
+    </div>`;
+  }
+  return entries.map((j) => {
+    const b = j.bookId ? S.books.find((x) => x.id === j.bookId) : null;
+    const kd = JOURNAL_KINDS.find((k) => k.id === j.kind) || JOURNAL_KINDS[0];
+    return `<div class="card eared journal-entry">
+      <div class="je-top">
+        <span class="chip gold">${icon(kd.ic, { size: 12 })} ${kd.label}</span>
+        <span class="muted small">${fmtDateNice(j.createdAt)}${b ? " · " + esc(b.t) : " · freeform"}</span>
+      </div>
+      ${j.prompt ? `<div class="muted small je-prompt">${esc(j.prompt)}</div>` : ""}
+      <div class="body rich-body">${entryBodyHTML(j)}</div>
+      <div class="btn-row"><button class="btn quiet sm" data-jedit="${j.id}">Edit</button></div>
+    </div>`;
+  }).join("");
+}
+function wireJournalEntryButtons() {
+  $("#j-first")?.addEventListener("click", () => openJournalEditor());
+  $$("[data-jedit]", root).forEach((b) => b.addEventListener("click", () => {
+    const entry = S.journal.find((j) => j.id === b.dataset.jedit);
+    if (entry) openJournalEditor({ entry });
+  }));
+}
+function updateJournalSuggestions() {
+  const box = $("#j-suggest", root);
+  if (!box) return;
+  const q = journalBookQuery.trim().toLowerCase();
+  if (!q) { box.innerHTML = ""; return; }
+  const booksWithEntries = [...new Set(S.journal.map((j) => j.bookId).filter(Boolean))].map((id) => S.books.find((b) => b.id === id)).filter(Boolean);
+  const matches = booksWithEntries.filter((b) => (b.t + " " + (b.a || "")).toLowerCase().includes(q) && b.t.toLowerCase() !== q).slice(0, 4);
+  box.innerHTML = matches.length ? matches.map((b) => `<button class="j-suggest-chip" data-suggest="${esc(b.t)}">${icon("book", { size: 12 })} ${esc(b.t)}</button>`).join("") : "";
+  $$("[data-suggest]", box).forEach((btn) => btn.addEventListener("click", () => {
+    journalBookQuery = btn.dataset.suggest;
+    $("#j-search", root).value = journalBookQuery;
+    refreshJournalList();
+  }));
+}
+function refreshJournalList() {
+  const entries = journalFilteredEntries();
+  $("#j-entries-list", root).innerHTML = journalEntriesListHTML(entries);
+  updateJournalSuggestions();
+  wireJournalEntryButtons();
+}
+
+function renderJournal() {
+  const entries = journalFilteredEntries();
 
   root.innerHTML = `
     ${topbar(`<button class="iconbtn" data-back-home title="Back to Home">${icon("chev_l", { size: 18 })}</button>`)}
@@ -704,46 +758,25 @@ function renderJournal() {
         <button class="btn sm solid" id="j-new">${icon("plus", { size: 14 })} New entry</button>
       </div>
       <p class="muted" style="margin:-8px 0 14px">A private space for how books actually land — beyond the star rating.</p>
-      <div class="search-head" style="margin-bottom:10px">
+      <div class="search-head" style="margin-bottom:6px">
         <input id="j-search" placeholder="Find entries by book title or author…" value="${esc(journalBookQuery)}">
       </div>
+      <div class="j-suggest-row" id="j-suggest"></div>
       <div class="seg">
         <button data-jf="all" class="${journalFilter === "all" ? "active" : ""}">All</button>
         <button data-jf="free" class="${journalFilter === "free" ? "active" : ""}">Freeform</button>
         ${JOURNAL_KINDS.map((k) => `<button data-jf="${k.id}" class="${journalFilter === k.id ? "active" : ""}">${icon(k.ic, { size: 13 })} ${k.label}</button>`).join("")}
       </div>
-      ${entries.length
-        ? entries.map((j) => {
-            const b = j.bookId ? S.books.find((x) => x.id === j.bookId) : null;
-            const kd = JOURNAL_KINDS.find((k) => k.id === j.kind) || JOURNAL_KINDS[0];
-            return `<div class="card eared journal-entry">
-              <div class="je-top">
-                <span class="chip gold">${icon(kd.ic, { size: 12 })} ${kd.label}</span>
-                <span class="muted small">${fmtDateNice(j.createdAt)}${b ? " · " + esc(b.t) : " · freeform"}</span>
-              </div>
-              ${j.prompt ? `<div class="muted small je-prompt">${esc(j.prompt)}</div>` : ""}
-              <div class="body rich-body">${entryBodyHTML(j)}</div>
-              <div class="btn-row"><button class="btn quiet sm" data-jedit="${j.id}">Edit</button></div>
-            </div>`;
-          }).join("")
-        : `<div class="card empty">
-            ${logoChip(16, 70)}
-            <div class="serif">${journalBookQuery || journalFilter !== "all" ? "Nothing matches yet." : "The margins are all yours."}</div>
-            <p>${journalBookQuery || journalFilter !== "all" ? "Try a different search or filter." : "Reflections, character notes, close reads, quotes worth keeping — they live here."}</p>
-            ${!journalBookQuery && journalFilter === "all" ? `<button class="btn solid" id="j-first">Write your first entry</button>` : ""}
-          </div>`}
+      <div id="j-entries-list">${journalEntriesListHTML(entries)}</div>
     </div>`;
 
   wireTopbar(root);
   $("[data-back-home]", root)?.addEventListener("click", () => navigate("home"));
   $("#j-new")?.addEventListener("click", () => openJournalEditor());
-  $("#j-first")?.addEventListener("click", () => openJournalEditor());
-  $("#j-search", root).addEventListener("input", (e) => { journalBookQuery = e.target.value; renderJournal(); });
+  $("#j-search", root).addEventListener("input", (e) => { journalBookQuery = e.target.value; refreshJournalList(); });
   $$("[data-jf]", root).forEach((b) => b.addEventListener("click", () => { journalFilter = b.dataset.jf; renderJournal(); }));
-  $$("[data-jedit]", root).forEach((b) => b.addEventListener("click", () => {
-    const entry = S.journal.find((j) => j.id === b.dataset.jedit);
-    if (entry) openJournalEditor({ entry });
-  }));
+  updateJournalSuggestions();
+  wireJournalEntryButtons();
 }
 
 /* ---------------- full-screen, Notion-style diary editor ---------------- */
@@ -752,8 +785,11 @@ function openJournalEditor(opts = {}) {
   let kind = entry ? entry.kind : (presetKind || "reflection");
   let chosenPrompt = entry ? entry.prompt : null;
   let selectedBookId = entry ? entry.bookId : bookId;
+  let pickerMode = selectedBookId ? "book" : "free";
+  let bookQuery = "";
   const isEdit = !!entry;
   const promptsFor = (k) => k === "reflection" ? EMOTIONAL_PROMPTS : k === "character" ? CHARACTER_PROMPTS : k === "analysis" ? ANALYSIS_PROMPTS : [];
+  const journalable = () => S.books.filter((b) => b.shelf === "reading" || b.shelf === "finished");
 
   const el = document.createElement("div");
   el.className = "journal-fs";
@@ -761,20 +797,26 @@ function openJournalEditor(opts = {}) {
 
   const selectedBook = () => selectedBookId ? S.books.find((x) => x.id === selectedBookId) : null;
   const initialContent = entry ? (entry.html || (entry.text ? esc(entry.text).replace(/\n/g, "<br>") + (entry.images || []).map((s) => `<br><img src="${s}">`).join("") : "")) : "";
+  bookQuery = selectedBook() ? selectedBook().t : "";
 
   const draw = () => {
     const prompts = promptsFor(kind);
     el.innerHTML = `
       <div class="jfs-top">
         <button class="iconbtn" id="jfs-close">${icon("x", { size: 16 })}</button>
-        <div class="jfs-book-picker" id="jfs-picker">
-          <button class="jfs-book-btn" id="jfs-book-btn">
-            ${selectedBook() ? `${icon("book", { size: 13 })} ${esc(selectedBook().t.slice(0, 26))}${selectedBook().t.length > 26 ? "…" : ""}` : `${icon("feather", { size: 13 })} Freeform`}
-            ${icon("chev_l", { size: 11, cls: "jfs-chev" })}
-          </button>
+        <div class="jfs-book-picker">
+          <select id="jfs-mode">
+            <option value="free" ${pickerMode === "free" ? "selected" : ""}>Freeform</option>
+            <option value="book" ${pickerMode === "book" ? "selected" : ""}>Select a book</option>
+          </select>
         </div>
         <button class="btn sm solid" id="jfs-save">${isEdit ? "Save" : "Keep this"}</button>
       </div>
+      ${pickerMode === "book" ? `
+      <div class="jfs-book-search">
+        <input id="jfs-book-q" placeholder="Search reading & finished books…" value="${esc(bookQuery)}" autocomplete="off">
+        <div id="jfs-book-results"></div>
+      </div>` : ""}
       <div class="kind-row jfs-kinds">
         ${JOURNAL_KINDS.map((k) => `<button data-k="${k.id}" class="${kind === k.id ? "active" : ""}">${icon(k.ic, { size: 14 })} ${k.label}</button>`).join("")}
       </div>
@@ -793,13 +835,45 @@ function openJournalEditor(opts = {}) {
     `;
 
     $("#jfs-close", el).addEventListener("click", closeEditor);
-    $("#jfs-book-btn", el).addEventListener("click", openBookSearchPicker);
+    $("#jfs-mode", el).addEventListener("change", (e) => {
+      pickerMode = e.target.value;
+      if (pickerMode === "free") { selectedBookId = null; bookQuery = ""; }
+      draw();
+      if (pickerMode === "book") $("#jfs-book-q", el)?.focus();
+    });
     $$("[data-k]", el).forEach((b) => b.addEventListener("click", () => { kind = b.dataset.k; chosenPrompt = null; draw(); }));
     $$("[data-prompt]", el).forEach((b) => b.addEventListener("click", () => {
       chosenPrompt = prompts[+b.dataset.prompt];
       draw();
       $("#jfs-editor", el).focus();
     }));
+
+    const bookQ = $("#jfs-book-q", el);
+    const drawBookResults = () => {
+      const resultsEl = $("#jfs-book-results", el);
+      if (!resultsEl) return;
+      const q = bookQuery.trim().toLowerCase();
+      const pool = journalable();
+      const matches = q
+        ? pool.filter((b) => (b.t + " " + (b.a || "")).toLowerCase().includes(q)).slice(0, 6)
+        : pool.slice().sort((a, b) => (b.addedAt || "").localeCompare(a.addedAt || "")).slice(0, 6);
+      resultsEl.innerHTML = matches.length
+        ? matches.map((b) => `<div class="jbp-row ${selectedBookId === b.id ? "on" : ""}" data-pick="${b.id}">
+            ${coverHTML(b, "cover")}<span>${esc(b.t)}<br><span class="muted small">${esc(b.a || "")} · ${b.shelf === "finished" ? "finished" : "reading"}</span></span>
+          </div>`).join("")
+        : `<p class="muted small" style="padding:10px 4px">${q ? `No reading or finished books match "${esc(bookQuery)}".` : "Nothing on your reading or finished shelves yet."}</p>`;
+      $$("[data-pick]", resultsEl).forEach((row) => row.addEventListener("click", () => {
+        const b = S.books.find((x) => x.id === row.dataset.pick);
+        if (!b) return;
+        selectedBookId = b.id; bookQuery = b.t;
+        bookQ.value = b.t;
+        drawBookResults();
+      }));
+    };
+    if (bookQ) {
+      drawBookResults();
+      bookQ.addEventListener("input", (e) => { bookQuery = e.target.value; selectedBookId = null; drawBookResults(); });
+    }
 
     const editor = $("#jfs-editor", el);
     editor.addEventListener("paste", async (e) => {
@@ -852,40 +926,6 @@ function openJournalEditor(opts = {}) {
     } else {
       editor.innerHTML += img + "<br>";
     }
-  }
-
-  function openBookSearchPicker() {
-    let q = "";
-    openSheet(`
-      <h2 style="margin-bottom:12px">About this entry</h2>
-      <input id="jbp-search" placeholder="Search your library, or leave blank for freeform…" autocomplete="off">
-      <div id="jbp-list" style="margin-top:14px"></div>
-    `, (sheet) => {
-      const input = $("#jbp-search", sheet);
-      const listEl = $("#jbp-list", sheet);
-      const drawList = () => {
-        const query = q.trim().toLowerCase();
-        const matches = query
-          ? S.books.filter((b) => (b.t + " " + (b.a || "")).toLowerCase().includes(query)).slice(0, 8)
-          : S.books.slice().sort((a, b) => (b.addedAt || "").localeCompare(a.addedAt || "")).slice(0, 8);
-        listEl.innerHTML = `
-          <div class="jbp-row ${!selectedBookId ? "on" : ""}" data-pick="">
-            ${icon("feather", { size: 15 })} <span>Freeform — just thoughts</span>
-          </div>
-          ${matches.map((b) => `<div class="jbp-row ${selectedBookId === b.id ? "on" : ""}" data-pick="${b.id}">
-            ${coverHTML(b, "cover")}<span>${esc(b.t)}<br><span class="muted small">${esc(b.a || "")}</span></span>
-          </div>`).join("")}
-          ${query && !matches.length ? `<p class="muted small" style="text-align:center;padding:14px">No books match "${esc(q)}".</p>` : ""}
-        `;
-        $$("[data-pick]", listEl).forEach((row) => row.addEventListener("click", () => {
-          selectedBookId = row.dataset.pick || null;
-          closeSheet();
-          draw();
-        }));
-      };
-      drawList();
-      input.addEventListener("input", (e) => { q = e.target.value; drawList(); });
-    });
   }
 
   function closeEditor() {
@@ -1658,6 +1698,15 @@ async function saveWrapSlideAsImage(viewerEl, variant, btn) {
 /* ================================================================
    MONTHLY WRAP — Spotify-Wrapped-style swipeable recap
 ================================================================ */
+function closingStatement(ms, quiet) {
+  if (quiet) {
+    return "Every reading life has months like this one. The shelf isn't going anywhere — pick it back up whenever you're ready.";
+  }
+  const hours = Math.round(ms.minutes / 60);
+  const bookPhrase = ms.finished.length ? `${ms.finished.length} book${ms.finished.length === 1 ? "" : "s"}` : "a few chapters here and there";
+  return `${bookPhrase}, ${ms.pages} pages, ${hours} hour${hours === 1 ? "" : "s"} spent somewhere else entirely. However the month went, you showed up for the pages.`;
+}
+
 function openMonthlyWrap(ym) {
   const ms = computeMonthStats(ym);
   const prevMs = computeMonthStats(prevMonthKey(ym));
@@ -1731,12 +1780,20 @@ function openMonthlyWrap(ym) {
       <h2 class="serif">A page goal for next month?</h2>
       <div class="goal-dial" style="margin-top:10px"><div class="n" id="wg-n">${newGoal}</div><div class="u">pages a day</div></div>
       <input type="range" id="wg-range" min="5" max="100" step="5" value="${newGoal}" style="max-width:280px;margin:8px auto">
-      <button class="btn solid" id="wg-save" style="margin-top:16px">Set intention & finish</button>
+      <p class="muted small" style="margin-top:10px">Adjusts your daily goal in Your taste as you slide it.</p>
+      <button class="btn solid" id="wg-save" style="margin-top:16px">Continue</button>
+    </div>`);
+
+    s.push(`<div class="wrap-slide">
+      <div class="wrap-ic">${icon("sparkle", { size: 30 })}</div>
+      <div class="eyebrow">${ms.label}</div>
+      <h2 class="serif" style="margin-top:6px">Well done this month.</h2>
+      <p class="muted" style="max-width:34ch;margin:10px auto 0">${closingStatement(ms, quiet)}</p>
     </div>`);
     return s;
   }
 
-  const slideVariants = [null, "stats", "collage", "quote", "compare", "recap"];
+  const slideVariants = [null, "stats", "collage", "quote", "compare", "recap", null, null];
 
   const el = document.createElement("div");
   el.className = "wrap-viewer";
@@ -1744,19 +1801,25 @@ function openMonthlyWrap(ym) {
 
   const draw = () => {
     const variant = slideVariants[idx];
+    const isLast = idx === slides.length - 1;
     el.innerHTML = `
       <div class="wrap-progress">${slides.map((_, i) => `<i class="${i < idx ? "done" : i === idx ? "now" : ""}"></i>`).join("")}</div>
+      <div class="wrap-header">
+        <div class="wrap-header-kicker">Monthly Wrapped</div>
+        <div class="wrap-header-month">${esc(ms.label)}</div>
+      </div>
       <button class="close-x wrap-close">${icon("x", { size: 16 })}</button>
       <div class="wrap-body">${slides[idx]}</div>
       <div class="wrap-nav">
         <button class="tap-zone left" aria-label="Previous"></button>
         <button class="tap-zone right" aria-label="Next"></button>
       </div>
+      <div class="wrap-brand"><img src="icons/logo.png" alt="" style="width:18px;height:18px;object-fit:contain"><span>Dogeared</span></div>
       <div class="wrap-foot">
-        ${variant ? `<button class="btn ghost sm" id="wr-save">${icon("download", { size: 14 })} Save</button>` : "<span></span>"}
+        ${isLast ? "<span></span>" : variant ? `<button class="btn ghost sm" id="wr-save">${icon("download", { size: 14 })} Save</button>` : "<span></span>"}
         <div class="btn-row" style="margin:0">
           ${idx > 0 ? `<button class="iconbtn" id="wr-prev">${icon("chev_l", { size: 18 })}</button>` : ""}
-          ${idx < slides.length - 1 ? `<button class="iconbtn" id="wr-next">${icon("chev_r", { size: 18 })}</button>` : ""}
+          ${isLast ? `<button class="btn solid" id="wr-done">Done</button>` : idx < slides.length - 1 ? `<button class="iconbtn" id="wr-next">${icon("chev_r", { size: 18 })}</button>` : ""}
         </div>
       </div>`;
 
@@ -1765,6 +1828,7 @@ function openMonthlyWrap(ym) {
     $(".tap-zone.right", el)?.addEventListener("click", () => go(1));
     $("#wr-prev", el)?.addEventListener("click", () => go(-1));
     $("#wr-next", el)?.addEventListener("click", () => go(1));
+    $("#wr-done", el)?.addEventListener("click", () => finish());
     $("#wr-save", el)?.addEventListener("click", (e) => saveWrapSlideAsImage(el, variant, e.currentTarget));
     $("#wg-range", el)?.addEventListener("input", (e) => {
       newGoal = +e.target.value;
@@ -1774,7 +1838,7 @@ function openMonthlyWrap(ym) {
     });
     $("#wg-save", el)?.addEventListener("click", () => {
       toast(`Daily goal set to ${newGoal} pages — updated in Your taste too.`);
-      finish();
+      go(1);
     });
   };
   const go = (d) => { idx = Math.max(0, Math.min(slides.length - 1, idx + d)); draw(); };

@@ -1,5 +1,5 @@
 /* Dogeared service worker — offline app shell caching */
-const CACHE = "dogeared-v9";
+const CACHE = "dogeared-v10";
 const CORE_SHELL = [
   "./", "./index.html", "./manifest.webmanifest",
   "./css/styles.css",
