@@ -20,6 +20,8 @@ const defaultState = () => ({
   seenFeed: [],  // catalog ids already shown/skipped
   unlocked: {},  // achievement id -> ISO date
   wrapsViewed: {}, // "YYYY-MM" -> true
+  shareHistory: [], // past generated share cards, for re-sharing
+  remoteCatalog: [], // books discovered live via Open Library, merged into the rec pool
   settings: { theme: "light" },
 });
 
@@ -34,6 +36,8 @@ function loadState() {
       affinity: Object.assign({ genres: {}, moods: {} }, s.affinity),
       settings: Object.assign({ theme: "light" }, s.settings),
       wrapsViewed: Object.assign({}, s.wrapsViewed),
+      shareHistory: Array.isArray(s.shareHistory) ? s.shareHistory : [],
+      remoteCatalog: Array.isArray(s.remoteCatalog) ? s.remoteCatalog : [],
     });
   } catch { return defaultState(); }
 }
@@ -127,6 +131,33 @@ function pagesThisWeek() {
   }
   return sum;
 }
+function last7Days() {
+  const out = [];
+  for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); out.push(todayStr(d)); }
+  return out;
+}
+function minutesThisWeek() {
+  const days = new Set(last7Days());
+  return S.sessions.filter((s) => days.has(s.date)).reduce((a, s) => a + s.minutes, 0);
+}
+function sessionsThisWeek() {
+  const days = new Set(last7Days());
+  return S.sessions.filter((s) => days.has(s.date)).length;
+}
+function booksFinishedThisWeek() {
+  const days = new Set(last7Days());
+  return S.books.filter((b) => b.shelf === "finished" && days.has((b.finishedAt || "").slice(0, 10))).length;
+}
+function weekRangeLabel() {
+  const days = last7Days();
+  const [y1, m1, d1] = days[0].split("-").map(Number);
+  const [y2, m2, d2] = days[6].split("-").map(Number);
+  const start = new Date(y1, m1 - 1, d1), end = new Date(y2, m2 - 1, d2);
+  const sameMonth = start.getMonth() === end.getMonth();
+  const startStr = start.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const endStr = end.toLocaleDateString(undefined, sameMonth ? { day: "numeric", year: "numeric" } : { month: "short", day: "numeric", year: "numeric" });
+  return `${startStr} – ${endStr}`;
+}
 
 /* estimated completion for a currently-reading book */
 function estimateFinish(book) {
@@ -177,6 +208,9 @@ function learnFrom(book, signal) {
 }
 
 /* ---------------- recommendation scoring ---------------- */
+function allCandidates() {
+  return CATALOG.concat(S.remoteCatalog || []);
+}
 function scoreBook(cb) {
   let s = 0;
   const pg = S.profile?.genres || [], pm = S.profile?.moods || [];
@@ -188,15 +222,21 @@ function scoreBook(cb) {
     if (pm.includes(m)) s += 2;
     s += (S.affinity.moods[m] || 0) * 0.7;
   }
-  s += (cb.r - 3.8) * 2;                    // community quality
-  s += Math.random() * 1.8;                 // serendipity
-  if (S.seenFeed.includes(cb.id)) s -= 3;   // fatigue
+  s += ((cb.r || 3.9) - 3.8) * 2;              // community quality
+  s += Math.random() * 1.8;                    // serendipity
   return s;
 }
-function recommendationFeed(n = 10) {
+/* excludeIds: ids already shown this session (keeps "Deal me more" from repeating) */
+function recommendationFeed(n = 10, excludeIds) {
   const inLib = new Set(S.books.map((b) => b.catalogId).filter(Boolean));
-  const pool = CATALOG.filter((c) => !inLib.has(c.id) && !S.seenFeed.includes(c.id));
+  const exclude = excludeIds || new Set();
+  const pool = allCandidates().filter((c) => !inLib.has(c.id) && !S.seenFeed.includes(c.id) && !exclude.has(c.id));
   return pool.map((c) => [scoreBook(c), c]).sort((a, b) => b[0] - a[0]).slice(0, n).map((x) => x[1]);
+}
+function poolRemaining(excludeIds) {
+  const inLib = new Set(S.books.map((b) => b.catalogId).filter(Boolean));
+  const exclude = excludeIds || new Set();
+  return allCandidates().filter((c) => !inLib.has(c.id) && !S.seenFeed.includes(c.id) && !exclude.has(c.id)).length;
 }
 function whyForYou(cb) {
   const pg = S.profile?.genres || [], pm = S.profile?.moods || [];
@@ -211,7 +251,7 @@ function whyForYou(cb) {
 }
 function similarBooks(book, n = 4) {
   const inLib = new Set(S.books.map((b) => b.catalogId).filter(Boolean));
-  return CATALOG
+  return allCandidates()
     .filter((c) => c.id !== book.catalogId && !inLib.has(c.id))
     .map((c) => {
       let s = 0;
@@ -222,6 +262,47 @@ function similarBooks(book, n = 4) {
       return [s, c];
     })
     .sort((a, b) => b[0] - a[0]).slice(0, n).map((x) => x[1]);
+}
+
+/* ---------------- live catalog expansion (Open Library) ----------------
+   When the local pool runs low, pull fresh candidates seeded by top
+   affinity genres and loved/finished authors — Discover keeps finding
+   new books instead of recycling the same seed catalog. */
+let _expandingCatalog = false;
+async function expandRemoteCatalog() {
+  if (_expandingCatalog || !navigator.onLine) return false;
+  _expandingCatalog = true;
+  try {
+    const topGenres = Object.entries(S.affinity.genres || {}).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([g]) => g);
+    const genreQueries = topGenres.map((g) => GENRES.find((x) => x.id === g)?.label).filter(Boolean);
+    const lovedAuthors = [...new Set(S.books.filter((b) => b.fav || b.shelf === "finished").map((b) => b.a).filter(Boolean))].slice(0, 2);
+    const queries = [...genreQueries, ...lovedAuthors];
+    if (!queries.length) queries.push("popular fiction");
+
+    const known = new Set(allCandidates().map((c) => (c.t + "::" + c.a).toLowerCase()));
+    let added = 0;
+    for (const q of queries.slice(0, 3)) {
+      try {
+        const docs = await olSearch(q, 10);
+        for (const d of docs) {
+          const key = (d.t + "::" + d.a).toLowerCase();
+          if (!d.t || known.has(key)) continue;
+          known.add(key);
+          S.remoteCatalog.push({
+            id: "ol-" + (d.olKey || uid()).replace(/[^a-zA-Z0-9]/g, ""),
+            t: d.t, a: d.a, g: d.g && d.g.length ? d.g : ["litfic"], m: [],
+            p: d.p || null, y: d.y || null, r: d.r || null, b: "", cover: d.cover || null, olKey: d.olKey,
+          });
+          added++;
+        }
+      } catch { /* one query failing shouldn't stop the others */ }
+    }
+    if (S.remoteCatalog.length > 400) S.remoteCatalog = S.remoteCatalog.slice(-400);
+    if (added) saveState();
+    return added > 0;
+  } finally {
+    _expandingCatalog = false;
+  }
 }
 
 /* ---------------- library ops ---------------- */
@@ -404,6 +485,32 @@ function pendingWrapMonth() {
 function markWrapViewed(ym) {
   S.wrapsViewed = S.wrapsViewed || {};
   S.wrapsViewed[ym] = true;
+  saveState();
+}
+
+function booksForShelf(max = 12) {
+  return S.books.filter((b) => b.shelf === "finished")
+    .sort((a, b) => (a.finishedAt || "").localeCompare(b.finishedAt || ""))
+    .slice(-max);
+}
+
+/* ---------------- anchor book for lifetime/wrap share cards ---------------- */
+function pickAnchorBook() {
+  const finished = S.books.filter((b) => b.shelf === "finished").sort((a, b) => (b.finishedAt || "").localeCompare(a.finishedAt || ""));
+  if (finished.length) return finished[0];
+  const reading = S.books.filter((b) => b.shelf === "reading").sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || ""));
+  if (reading.length) return reading[0];
+  const fav = S.books.filter((b) => b.fav).sort((a, b) => (b.addedAt || "").localeCompare(a.addedAt || ""));
+  if (fav.length) return fav[0];
+  const any = S.books.slice().sort((a, b) => (b.addedAt || "").localeCompare(a.addedAt || ""));
+  return any[0] || null;
+}
+
+/* ---------------- share history (re-share old cards later) ---------------- */
+function recordShareHistory(entry) {
+  S.shareHistory = S.shareHistory || [];
+  S.shareHistory.unshift({ id: uid(), ts: new Date().toISOString(), ...entry });
+  if (S.shareHistory.length > 30) S.shareHistory = S.shareHistory.slice(0, 30);
   saveState();
 }
 

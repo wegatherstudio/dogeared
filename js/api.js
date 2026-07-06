@@ -55,80 +55,95 @@ async function olWorkDescription(olKey) {
 }
 
 /* ================================================================
-   SHARE CARD — 9:16, solid color per theme, premium & flat.
-   opts: {
-     theme, kind:'book'|'wrap', book, coverUrl, kicker, title, subtitle,
-     stars, stats:[[n,l],...], profileName, transparent:boolean
-   }
-   Canvas is 1080×1920. In transparent mode: no fill, no cover, no fold —
-   just the wordmark, title, and stats, meant to overlay on your own photo.
+   SHARE CARD — 9:16. Three background styles:
+     'theme'       — gradient derived from the book cover's own color
+     'gradient'    — the classic warm Dogeared gradient, muted for contrast
+     'transparent' — no fill, no cover, meant to overlay your own photo
+   Font is always warm white/cream across all three styles.
+   Layout flows top-to-bottom based on actual measured text height, so
+   long or short titles never overlap the author line below them.
+   opts: { style, kicker, dateStr, coverUrl, book, title, subtitle,
+           stars, stats:[[n,l] x4], profileName }
 ================================================================ */
-const CARD_THEMES = {
-  dawn:   "#BDAD25",
-  dusk:   "#7A3A52",
-  forest: "#2F4F3E",
-  night:  "#1C1710",
-  paper:  "#EFECDB",
-};
+const DEFAULT_GRADIENT = ["#9C8D1F", "#8C6329", "#A54F2E"]; // muted for legibility under white text
+const INK = "#FFF7E8";
+const SUB = "rgba(255,247,232,.76)";
 
 function drawShareCard(canvas, opts) {
   canvas.width = 1080; canvas.height = 1920;
   const ctx = canvas.getContext("2d");
   const W = canvas.width, H = canvas.height;
-  const transparent = !!opts.transparent;
-  const solid = CARD_THEMES[opts.theme] || CARD_THEMES.dawn;
-  const isPaper = opts.theme === "paper";
-  const INK = transparent ? "#2C261D" : (isPaper ? "#2C261D" : "#FFF7E8");
-  const SUB = transparent ? "rgba(44,38,29,.7)" : (isPaper ? "rgba(44,38,29,.62)" : "rgba(255,247,232,.72)");
-
+  const style = opts.style || "gradient";
+  const transparent = style === "transparent";
   ctx.clearRect(0, 0, W, H);
-  if (!transparent) {
-    ctx.fillStyle = solid;
+
+  const fillBackground = (stops) => {
+    if (transparent) return;
+    const grad = ctx.createLinearGradient(0, 0, W, H);
+    grad.addColorStop(0, stops[0]);
+    grad.addColorStop(1, stops[1]);
+    ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
-    // dog-ear fold — solid, no gradient
-    ctx.fillStyle = "rgba(255,255,255,0.88)";
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.beginPath(); ctx.moveTo(W - 120, 0); ctx.lineTo(W, 0); ctx.lineTo(W, 120); ctx.closePath(); ctx.fill();
     ctx.fillStyle = "rgba(0,0,0,0.22)";
     ctx.beginPath(); ctx.moveTo(W - 120, 0); ctx.lineTo(W - 120, 120); ctx.lineTo(W, 120); ctx.closePath(); ctx.fill();
-  }
+  };
 
-  const finishText = (coverBottom) => {
+  const drawCoverPlaceholder = (cx, cy, cw, ch) => {
+    const hue = GENRE_HUES[(opts.book?.g || [])[0]] || "#6B5B3F";
+    rounded(ctx, cx, cy, cw, ch, 18); ctx.fillStyle = hue; ctx.fill();
+    ctx.fillStyle = "#FFF7E8";
+    ctx.font = "italic 300 34px Newsreader, Georgia, serif";
+    ctx.textAlign = "center";
+    wrapT(ctx, opts.title, W / 2, cy + ch / 2 - 20, cw - 70, 42);
+  };
+
+  /* the whole text block, flowing downward from coverBottom (0 if no cover) */
+  const drawTextBlock = (coverBottom) => {
     ctx.textAlign = "center";
     ctx.fillStyle = SUB;
-    ctx.font = "500 26px Outfit, Arial, sans-serif";
-    ctx.fillText((opts.kicker || "READING LOG").toUpperCase().split("").join("\u200A"), W / 2, 100);
+    ctx.font = "500 24px Outfit, Arial, sans-serif";
+    ctx.fillText((opts.kicker || "MY READING LIFE").toUpperCase().split("").join("\u200A"), W / 2, 92);
+    if (opts.dateStr) {
+      ctx.font = "400 22px Outfit, Arial, sans-serif";
+      ctx.fillText(opts.dateStr, W / 2, 128);
+    }
 
-    const titleY = transparent ? 260 : coverBottom + 90;
+    let y = coverBottom ? coverBottom + 86 : 260;
     ctx.fillStyle = INK;
-    ctx.font = "300 60px Newsreader, Georgia, serif";
-    wrapT(ctx, opts.title, W / 2, titleY, W - 190, 68);
-    let y2 = titleY + 68;
+    ctx.font = "300 56px Newsreader, Georgia, serif";
+    const titleLH = 64;
+    const titleLines = wrapLines(ctx, opts.title, W - 190).slice(0, 3);
+    titleLines.forEach((line, i) => ctx.fillText(line, W / 2, y + i * titleLH));
+    y += (titleLines.length - 1) * titleLH;
+
     if (opts.subtitle) {
+      y += 56;
       ctx.fillStyle = SUB;
       ctx.font = "300 32px Outfit, Arial, sans-serif";
-      ctx.fillText(opts.subtitle, W / 2, y2 + 20);
-      y2 += 20;
+      ctx.fillText(opts.subtitle, W / 2, y);
     }
     if (opts.stars) {
-      ctx.fillStyle = isPaper || transparent ? "#A0732F" : "#FFE9A8";
+      y += 78;
+      ctx.fillStyle = "#FFE9A8";
       ctx.font = "42px Georgia, serif";
       let st = ""; for (let i = 1; i <= 5; i++) st += i <= opts.stars ? "★" : "☆";
-      ctx.fillText(st, W / 2, y2 + 80);
-      y2 += 80;
+      ctx.fillText(st, W / 2, y);
     }
 
-    // stat grid (2x2), positioned relative to remaining space
-    const stats = opts.stats.slice(0, 4);
-    const gridTop = Math.max(y2 + 170, transparent ? 620 : coverBottom + 420);
+    // stat grid — 2 columns × 2 rows, order supplied by the caller
+    const stats = (opts.stats || []).slice(0, 4);
+    const gridTop = y + 170;
     const gx = [W * 0.28, W * 0.72], gy = [gridTop, gridTop + 150];
     stats.forEach(([n, l], i) => {
-      const x = gx[i % 2], y = gy[Math.floor(i / 2)];
+      const x = gx[i % 2], gy_ = gy[Math.floor(i / 2)];
       ctx.fillStyle = INK;
-      ctx.font = "300 58px Newsreader, Georgia, serif";
-      ctx.fillText(String(n), x, y);
+      ctx.font = "300 56px Newsreader, Georgia, serif";
+      ctx.fillText(String(n), x, gy_);
       ctx.fillStyle = SUB;
       ctx.font = "400 22px Outfit, Arial, sans-serif";
-      ctx.fillText(String(l).toUpperCase(), x, y + 36);
+      ctx.fillText(String(l).toUpperCase(), x, gy_ + 36);
     });
 
     // footer
@@ -148,32 +163,204 @@ function drawShareCard(canvas, opts) {
     opts.onDone && opts.onDone();
   };
 
-  if (opts.kind === "book" && !transparent) {
-    const cw = 400, ch = 600, cx = W / 2 - cw / 2, cy = 150;
-    ctx.save();
-    ctx.shadowColor = "rgba(0,0,0,.4)"; ctx.shadowBlur = 50; ctx.shadowOffsetY = 20;
-    if (opts.coverUrl) {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => { roundImg(ctx, img, cx, cy, cw, ch, 18); ctx.restore(); finishText(cy + ch); };
-      img.onerror = () => { placeholder(); ctx.restore(); finishText(cy + ch); };
-      img.src = opts.coverUrl;
-      return;
+  /* a generated bookshelf of spines — used on the weekly stats card since
+     there's no single book to feature. Left-to-right, oldest-kept → newest.
+     Uses each book's real cover art when available (a true cross-section
+     crop, like a spine), falling back to a genre-tinted block + title
+     only when a cover hasn't been resolved. */
+  const drawShelf = (y, h, books) => new Promise((resolve) => {
+    const margin = 90;
+    const availW = W - margin * 2;
+    const n = Math.min(books.length, 12);
+    const chosen = books.slice(-n);
+    if (!chosen.length) { resolve(); return; }
+    const spineW = Math.min(88, availW / n);
+    const totalW = spineW * chosen.length;
+    const startX = W / 2 - totalW / 2;
+    const shelfY = y + h;
+
+    ctx.strokeStyle = "rgba(255,247,232,.5)";
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(startX - 22, shelfY); ctx.lineTo(startX + totalW + 22, shelfY); ctx.stroke();
+
+    let remaining = chosen.length;
+    const done = () => { remaining--; if (remaining <= 0) resolve(); };
+
+    chosen.forEach((b, i) => {
+      const jitter = [0, 16, -10, 10, -16, 6][i % 6];
+      const bh = Math.max(140, h - 30 + jitter);
+      const bx = startX + i * spineW;
+      const by = shelfY - bh;
+      const sw = spineW - 4;
+
+      const paintArt = (img) => {
+        ctx.save();
+        rounded(ctx, bx + 2, by, sw, bh, 4);
+        ctx.clip();
+        if (img) {
+          const scale = bh / img.height;
+          const scaledW = img.width * scale;
+          const sx = (scaledW - sw) / 2;
+          ctx.drawImage(img, bx + 2 - sx, by, scaledW, bh);
+          ctx.fillStyle = "rgba(0,0,0,.15)";
+          ctx.fillRect(bx + 2, by, sw, bh);
+        } else {
+          const hue = GENRE_HUES[(b.g || [])[0]] || "#6B5B3F";
+          ctx.fillStyle = hue; ctx.fillRect(bx + 2, by, sw, bh);
+        }
+        ctx.restore();
+        ctx.fillStyle = "rgba(255,255,255,.18)";
+        ctx.fillRect(bx + 2, by, 3, bh);
+        if (!img) {
+          ctx.save();
+          ctx.translate(bx + spineW / 2, shelfY - 14);
+          ctx.rotate(-Math.PI / 2);
+          ctx.textAlign = "left";
+          ctx.fillStyle = "#FFF7E8";
+          ctx.font = `500 ${Math.max(11, Math.min(16, spineW * 0.32))}px Outfit, Arial, sans-serif`;
+          const maxLen = bh - 26;
+          let title = b.t || "";
+          while (ctx.measureText(title).width > maxLen && title.length > 3) title = title.slice(0, -2);
+          if (title !== (b.t || "")) title = title.replace(/\s+$/, "") + "…";
+          ctx.fillText(title, 0, 4);
+          ctx.restore();
+        }
+      };
+
+      if (b.cover) {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => { paintArt(img); done(); };
+        img.onerror = () => { paintArt(null); done(); };
+        img.src = b.cover;
+      } else {
+        paintArt(null);
+        done();
+      }
+    });
+  });
+
+  if (transparent) {
+    if (opts.shelfBooks?.length) {
+      drawShelf(170, 300, opts.shelfBooks).then(() => drawTextBlock(470));
+    } else {
+      drawTextBlock(0);
     }
-    placeholder();
-    ctx.restore();
-    finishText(cy + ch);
-    function placeholder() {
-      const hue = GENRE_HUES[(opts.book?.g || [])[0]] || "#6B5B3F";
-      rounded(ctx, cx, cy, cw, ch, 18); ctx.fillStyle = hue; ctx.fill();
-      ctx.fillStyle = "#FFF7E8";
-      ctx.font = "italic 300 36px Newsreader, Georgia, serif";
-      ctx.textAlign = "center";
-      wrapT(ctx, opts.title, W / 2, cy + ch / 2 - 20, cw - 70, 44);
-    }
-  } else {
-    finishText(0);
+    return;
   }
+
+  if (opts.shelfBooks) {
+    fillBackground(DEFAULT_GRADIENT);
+    if (opts.shelfBooks.length) {
+      drawShelf(170, 300, opts.shelfBooks).then(() => drawTextBlock(470));
+    } else {
+      drawTextBlock(0);
+    }
+    return;
+  }
+
+  const cw = 380, ch = 570, cx = W / 2 - cw / 2, cy = 165;
+
+  if (opts.coverUrl) {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const stops = style === "theme" ? themeStopsFromImage(img) : DEFAULT_GRADIENT;
+      fillBackground(stops);
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,.4)"; ctx.shadowBlur = 50; ctx.shadowOffsetY = 20;
+      roundImg(ctx, img, cx, cy, cw, ch, 18);
+      ctx.restore();
+      drawTextBlock(cy + ch);
+    };
+    img.onerror = () => {
+      const stops = style === "theme" ? themeStopsFromGenre(opts.book) : DEFAULT_GRADIENT;
+      fillBackground(stops);
+      drawCoverPlaceholder(cx, cy, cw, ch);
+      drawTextBlock(cy + ch);
+    };
+    img.src = opts.coverUrl;
+    return;
+  }
+  if (opts.book) {
+    const stops = style === "theme" ? themeStopsFromGenre(opts.book) : DEFAULT_GRADIENT;
+    fillBackground(stops);
+    drawCoverPlaceholder(cx, cy, cw, ch);
+    drawTextBlock(cy + ch);
+    return;
+  }
+  fillBackground(DEFAULT_GRADIENT);
+  drawTextBlock(0);
+}
+
+/* ---------------- color extraction: sample the cover, build a gradient from it ---------------- */
+function themeStopsFromImage(img) {
+  try {
+    const size = 24;
+    const c = document.createElement("canvas");
+    c.width = size; c.height = size;
+    const cx = c.getContext("2d");
+    cx.drawImage(img, 0, 0, size, size);
+    const data = cx.getImageData(0, 0, size, size).data;
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] < 200) continue;
+      r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+    }
+    if (!n) return DEFAULT_GRADIENT;
+    r = Math.round(r / n); g = Math.round(g / n); b = Math.round(b / n);
+    return gradientFromRGB(r, g, b);
+  } catch {
+    return DEFAULT_GRADIENT; // canvas got tainted (no CORS) — fall back gracefully
+  }
+}
+function themeStopsFromGenre(book) {
+  const hex = GENRE_HUES[(book?.g || [])[0]] || "#6B5B3F";
+  const { r, g, b } = hexToRgb(hex);
+  return gradientFromRGB(r, g, b);
+}
+function gradientFromRGB(r, g, b) {
+  const { h, s } = rgbToHsl(r, g, b);
+  const satAdj = Math.max(0.32, Math.min(s, 0.7));
+  const top = hslToHex(h, satAdj, 0.4);
+  const bottom = hslToHex(h, satAdj, 0.2);
+  return [top, bottom];
+}
+function hexToRgb(hex) {
+  const m = hex.replace("#", "");
+  return { r: parseInt(m.slice(0, 2), 16), g: parseInt(m.slice(2, 4), 16), b: parseInt(m.slice(4, 6), 16) };
+}
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0; const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h /= 6;
+  }
+  return { h, s, l };
+}
+function hslToHex(h, s, l) {
+  const hue2rgb = (p, q, t) => {
+    if (t < 0) t += 1; if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  let r, g, b;
+  if (s === 0) { r = g = b = l; }
+  else {
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1 / 3); g = hue2rgb(p, q, h); b = hue2rgb(p, q, h - 1 / 3);
+  }
+  const toHex = (x) => Math.round(x * 255).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 function rounded(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -186,6 +373,17 @@ function roundImg(ctx, img, x, y, w, h, r) {
   const sc = Math.max(w / img.width, h / img.height);
   ctx.drawImage(img, x + w / 2 - img.width * sc / 2, y + h / 2 - img.height * sc / 2, img.width * sc, img.height * sc);
   ctx.restore();
+}
+function wrapLines(ctx, str, maxW) {
+  const words = String(str || "").split(" ");
+  let line = "", lines = [];
+  for (const w of words) {
+    const test = line ? line + " " + w : w;
+    if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = w; }
+    else line = test;
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 function wrapT(ctx, str, x, y, maxW, lh) {
   const words = String(str || "").split(" ");

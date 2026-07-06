@@ -4,19 +4,16 @@
 
 ## What's in this build
 
+- **Floating iOS-style dock** — rounded, glass-blurred, anchored with margin (not edge-to-edge). The session timer button is a large, raised, high-contrast circle floating dead-center above the dock — unmistakably the primary action.
 - **Cinematic onboarding** — genre picks → mood picks → a daily page dial → your name. Every pick seeds a real recommendation engine, not just a preferences form.
-- **Discover** — a vertical snap feed of full-bleed book cards. Skip a book and it's gone for good; hit "Deal me more" and the feed keeps flowing from where you were, no jump to the top.
-- **Reflective Journaling** — a private space distinct from star ratings and reviews:
-  - Per-book entries *and* freeform entries not tied to any book
-  - Four entry kinds: **Reflection** (emotional prompts), **Character** (who stayed with you), **Analysis** (literary criticism/craft prompts), and **Quote**
-  - Up to 4 photo attachments per entry — a marked-up page, a handwritten note, a view from where you were reading
-  - Its own tab in the bottom nav, with filters by kind, by book, or freeform
+- **Discover** — a vertical snap feed of full-bleed book cards. The search icon stays fixed on screen while you scroll. Skip a book and it's gone for good. **Deal me more** never repeats what you've already been shown in this session, and quietly pulls fresh candidates live from Open Library once the local pool runs low.
+- **Reflective Journaling — now on the Homepage.** No separate tab; your two most recent entries sit right on Home with a **New entry** button and an **Edit** button on each, plus a "See all entries" link to the full journal list (also editable there). Four entry kinds — Reflection, Character, Analysis, Quote — each with its own prompt set, and up to 4 photo attachments per entry.
 - **Live book search** via Open Library, sticky search bar so it doesn't scroll away from long result lists.
-- **Sessions like workouts** — timestamp-based timer (survives lock/close), page slider, mood tagging, then a full-screen animated summary with an XP pop.
-- **Post-finish share cards** — now **9:16**, in five solid (no-gradient) color themes, plus a **transparent PNG export** with no cover/background — just the stats, meant to be overlaid on your own photo. Applies to book cards, session cards, and the profile's lifetime "share my stats" card.
-- **Monthly Wrap** — a Spotify-Wrapped-style recap that auto-generates once each month closes: a swipeable, story-style viewer (tap or swipe through) covering the stat breakdown, a cover collage, your standout saved quote, a month-over-month comparison, an encouraging note on quiet months, and a next-month goal nudge. A banner appears on Home the moment it's ready.
+- **Sessions like workouts** — the timer card now fills nearly the full screen (space reserved below for "Save a quote mid-read"), with a timestamp-based clock that survives lock/close, a page slider, mood tagging, then a full-screen animated summary with an XP pop.
+- **Share cards** — 9:16, laid out with a fully dynamic text flow (long or short titles never overlap the author line — verified against titles that wrap to 1, 2, or 3 lines). Three background styles to choose from: **Cover theme** (a gradient sampled directly from the book's own cover art), **Classic** (the signature Dogeared gold→ochre→ember gradient, muted for legibility), and **Transparent** (no fill, no cover — just white text, for overlaying your own photo). Every card is always anchored to a real book cover when one exists. A date stamp sits under the kicker as dated proof. Every card you generate — even if closed without sharing — is saved to **Profile → Recent shares** for re-sending later.
+- **Monthly Wrap** — a Spotify-Wrapped-style recap that auto-generates once each month closes: a swipeable, story-style viewer covering the stat breakdown, a cover collage, your standout saved quote, a month-over-month comparison, an encouraging note on quiet months, and a next-month goal nudge.
 - **Gamification with restraint** — XP/levels and 15 achievements, all rendered with a single-color icon system (no emoji, except the mid-session "how's it feel?" mood picker, which keeps its emoji on purpose).
-- **Appearance** — light/dark toggle lives only in Profile, not cluttering every top bar. Dark mode gives the (dark-inked) logo mark a lighter halo so it's never dark-on-dark.
+- **Appearance** — light/dark toggle lives only in Profile. Dark mode gives the (dark-inked) logo mark a lighter halo so it's never dark-on-dark.
 - **Local-first** — everything lives in `localStorage`. JSON export/import for backup or moving devices.
 
 ## Run it
@@ -60,7 +57,7 @@ dogeared/
 
 ## Notes
 
-- **Discover's "skip"** is permanent for that book (stored in `S.seenFeed`) — it will not resurface. Wishlisting or starting a book removes it from the pool naturally since it's now in your library.
-- **Share cards** are 1080×1920 canvases. Transparent mode skips the background fill and the cover entirely, by design, so it composites cleanly over your own photo.
+- **Discover's "skip"** is permanent for that book (stored in `S.seenFeed`) — it will not resurface. **"Deal me more"** tracks everything shown this session so it never repeats, and automatically expands the pool via live Open Library search once fewer than 6 unseen local candidates remain.
+- **Share cards** are 1080×1920 canvases with a restored brand gradient (gold → ochre → ember) for non-transparent exports; transparent mode drops the fill and the cover entirely so it composites cleanly over your own photo. A history of generated cards lives in Profile → Recent shares for re-sending later, dated so each one still reads as "proof for that day."
 - **Monthly Wrap** looks at the *previous* completed calendar month, only after your join date, and won't nag twice — opening it marks it viewed.
 - All state lives under one `localStorage` key (`dogeared.state.v2`). Profile → **Export backup** downloads it as JSON; **Import backup** restores it anywhere.

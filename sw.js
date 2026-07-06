@@ -1,11 +1,13 @@
 /* Dogeared service worker — offline app shell caching */
-const CACHE = "dogeared-v2";
+const CACHE = "dogeared-v6";
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest",
   "./css/styles.css",
   "./js/icons.js", "./js/catalog.js", "./js/store.js", "./js/api.js", "./js/app.js",
   "./icons/logo.png", "./icons/icon-192.png", "./icons/icon-512.png",
-  "./icons/favicon.png", "./icons/apple-touch-icon.png"
+  "./icons/favicon.png", "./icons/apple-touch-icon.png",
+  "./icons/avatar-classic.png", "./icons/avatar-mustard.png", "./icons/avatar-ochre.png",
+  "./icons/avatar-ember.png", "./icons/avatar-teal.png"
 ];
 
 self.addEventListener("install", (e) => {

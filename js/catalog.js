@@ -135,7 +135,14 @@ const ACHIEVEMENTS = [
   { id:"collector",     ic:"book_open",  t:"The Collector",     d:"20 books in your library",       test:(s)=>s.books.length>=20 },
 ];
 
-/* session mid-read mood — kept as emoji intentionally */
+/* ---------------- profile avatars (same art as the logo, recolored) ---------------- */
+const AVATAR_PRESETS = [
+  { id: "classic", label: "Classic", file: "icons/avatar-classic.png" },
+  { id: "mustard", label: "Mustard", file: "icons/avatar-mustard.png" },
+  { id: "ochre",   label: "Ochre",   file: "icons/avatar-ochre.png" },
+  { id: "ember",   label: "Ember",   file: "icons/avatar-ember.png" },
+  { id: "teal",    label: "Teal",    file: "icons/avatar-teal.png" },
+];
 const SESSION_MOODS = [
   ["😌","calm"],["🤯","mind-blown"],["🥹","moved"],["😱","gripped"],["😴","sleepy"],["🤔","thoughtful"]
 ];

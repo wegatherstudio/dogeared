@@ -18,6 +18,14 @@ applyTheme();
 const logoChip = (px, imgSize) =>
   `<span class="logo-chip" style="padding:${px}px"><img src="icons/logo.png" alt="" style="width:${imgSize}px;display:block"></span>`;
 
+function avatarSrc(profile) {
+  const a = profile?.avatar;
+  if (!a) return AVATAR_PRESETS[0].file;
+  if (a.startsWith("preset:")) return AVATAR_PRESETS.find((p) => p.id === a.slice(7))?.file || AVATAR_PRESETS[0].file;
+  return a; // custom uploaded dataURL
+}
+const avatarHTML = (size = 56) => `<img class="avatar-mark" src="${avatarSrc(S.profile)}" alt="Your avatar" style="width:${size}px;height:${size}px">`;
+
 /* ================================================================
    ONBOARDING — cinematic, centered, icon-based
 ================================================================ */
@@ -185,6 +193,7 @@ function renderHome() {
   const pct = Math.min(1, pToday / goal);
   const circ = 2 * Math.PI * 50;
   const reading = S.books.filter((b) => b.shelf === "reading");
+  const recentJournal = S.journal.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 2);
   const doy = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
   const [q, who] = QUOTES[doy % QUOTES.length];
   const hour = new Date().getHours();
@@ -255,6 +264,27 @@ function renderHome() {
             <button class="btn solid" data-go-discover style="margin-top:10px">Open Discover</button>
           </div>`}
 
+      <div class="card rise d3">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span class="eyebrow" style="margin:0">Journal</span>
+          <button class="btn sm ghost" id="home-j-new">${icon("plus", { size: 13 })} New entry</button>
+        </div>
+        ${recentJournal.length ? recentJournal.map((j) => {
+            const b = j.bookId ? S.books.find((x) => x.id === j.bookId) : null;
+            const kd = JOURNAL_KINDS.find((k) => k.id === j.kind) || JOURNAL_KINDS[0];
+            return `<div class="mini-entry">
+              <div class="je-top">
+                <span class="chip gold">${icon(kd.ic, { size: 11 })} ${kd.label}</span>
+                <span class="muted small">${fmtDateNice(j.createdAt)}${b ? " · " + esc(b.t) : " · freeform"}</span>
+              </div>
+              <p style="font-family:var(--font-d);font-size:15px;margin-top:6px;${j.kind === "quote" ? "font-style:italic" : ""}">${j.kind === "quote" ? "❝ " : ""}${esc(j.text.slice(0, 130))}${j.text.length > 130 ? "…" : ""}${j.kind === "quote" ? " ❞" : ""}</p>
+              <div class="btn-row"><button class="btn quiet sm" data-home-jedit="${j.id}">Edit</button></div>
+            </div>`;
+          }).join("")
+          : `<p class="muted small">Reflections, character notes, close reads, quotes worth keeping — they'll live here.</p>`}
+        ${S.journal.length ? `<div class="btn-row"><button class="btn quiet sm" id="home-j-all">See all entries</button></div>` : ""}
+      </div>
+
       <div class="card eared quote-block rise d4">
         <div class="q">"${esc(q)}"</div><div class="w">— ${esc(who)}</div>
       </div>
@@ -263,6 +293,12 @@ function renderHome() {
   wireTopbar(root);
   $$("[data-open-wrap]", root).forEach((el) => el.addEventListener("click", () => openMonthlyWrap(el.dataset.openWrap)));
   $("[data-go-discover]", root)?.addEventListener("click", () => navigate("discover"));
+  $("#home-j-new")?.addEventListener("click", () => openJournalEditor());
+  $("#home-j-all")?.addEventListener("click", () => navigate("journal"));
+  $$("[data-home-jedit]", root).forEach((b) => b.addEventListener("click", () => {
+    const entry = S.journal.find((j) => j.id === b.dataset.homeJedit);
+    if (entry) openJournalEditor({ entry });
+  }));
   $$("[data-read]", root).forEach((b) => b.addEventListener("click", (e) => {
     e.stopPropagation(); startTimer(b.dataset.read); navigate("timer");
   }));
@@ -273,23 +309,31 @@ function renderHome() {
    DISCOVER — vertical snap feed
 ================================================================ */
 let feedItems = [];
+let feedShownIds = new Set(); // this session's shown items — "Deal me more" never repeats these
+function findCandidate(id) { return allCandidates().find((c) => c.id === id); }
+
 function renderDiscover() {
-  if (!feedItems.length) feedItems = recommendationFeed(8);
+  if (!feedItems.length) {
+    feedItems = recommendationFeed(8);
+    feedItems.forEach((c) => feedShownIds.add(c.id));
+  }
   feedRoot.innerHTML = `
     <div class="feed" id="feed">
       <div class="feed-hint">Swipe for your next book</div>
-      <div class="feed-topbtns">
-        <button class="iconbtn" data-open-search title="Search">${icon("search", { size: 18 })}</button>
-      </div>
       ${feedItems.map(feedCardHTML).join("")}
       <div class="feed-card" id="feed-more">
         <div class="bgwash" style="background:var(--ochre)"></div>
-        <div class="fc-inner" style="justify-content:center;min-height:60vh">
-          <div class="fc-title serif">Still curious?</div>
-          <p class="fc-blurb">The more you read, save, and skip, the sharper this feed gets.</p>
-          <button class="btn main" data-more>${icon("refresh", { size: 16 })} Deal me more</button>
+        <div class="fc-inner">
+          <div class="fc-content">
+            <div class="fc-title serif">Still curious?</div>
+            <p class="fc-blurb">The more you read, save, and skip, the sharper this feed gets.</p>
+            <button class="btn main" data-more>${icon("refresh", { size: 16 })} Deal me more</button>
+          </div>
         </div>
       </div>
+    </div>
+    <div class="feed-topbtns">
+      <button class="iconbtn" data-open-search title="Search">${icon("search", { size: 18 })}</button>
     </div>`;
 
   wireTopbar(feedRoot);
@@ -297,7 +341,7 @@ function renderDiscover() {
   wireFeedActions(feedEl);
   resolveCoversFor(feedItems, feedEl);
 
-  $("[data-more]", feedRoot)?.addEventListener("click", () => appendMoreFeed());
+  $("[data-more]", feedRoot)?.addEventListener("click", (e) => appendMoreFeed(e.currentTarget));
 }
 
 function feedCardHTML(cb) {
@@ -305,18 +349,20 @@ function feedCardHTML(cb) {
   const gl = cb.g.map((g) => GENRES.find((x) => x.id === g)?.label).filter(Boolean);
   return `<div class="feed-card" data-fc="${cb.id}">
     <div class="bgwash" style="background:${hue}"></div>
-    <div class="bgcover"></div>
+    <div class="bgcover"${cb.cover ? ` style="background-image:url(${cb.cover})"` : ""}></div>
     <div class="fc-inner">
-      ${genCoverHTML(cb, "cover xl fc-cover")}
-      <div class="fc-title">${esc(cb.t)}</div>
-      <div class="fc-author">${esc(cb.a)} · ${cb.y}</div>
-      <div class="fc-meta">
-        <span class="chip">★ ${cb.r}</span>
-        <span class="chip">${cb.p} pages</span>
-        ${gl.slice(0, 2).map((l) => `<span class="chip">${l}</span>`).join("")}
+      <div class="fc-content">
+        ${cb.cover ? `<img class="cover xl fc-cover" src="${cb.cover}" alt="">` : genCoverHTML(cb, "cover xl fc-cover")}
+        <div class="fc-title">${esc(cb.t)}</div>
+        <div class="fc-author">${esc(cb.a || "Unknown author")}${cb.y ? " · " + cb.y : ""}</div>
+        <div class="fc-meta">
+          ${cb.r ? `<span class="chip">★ ${cb.r}</span>` : ""}
+          ${cb.p ? `<span class="chip">${cb.p} pages</span>` : ""}
+          ${gl.slice(0, 2).map((l) => `<span class="chip">${l}</span>`).join("")}
+        </div>
+        <div class="fc-blurb">${cb.b ? esc(cb.b) : "An Open Library pick, matched to your taste — tap Start to learn more as you go."}</div>
+        <div class="fc-why">${esc(whyForYou(cb))}</div>
       </div>
-      <div class="fc-blurb">${esc(cb.b)}</div>
-      <div class="fc-why">${esc(whyForYou(cb))}</div>
       <div class="fc-actions">
         <button class="btn main" data-fc-start="${cb.id}">Start reading</button>
         <button class="btn" data-fc-save="${cb.id}">${icon("plus", { size: 14 })} Wishlist</button>
@@ -328,21 +374,24 @@ function feedCardHTML(cb) {
 
 function wireFeedActions(scope) {
   $$("[data-fc-start]", scope).forEach((b) => b.addEventListener("click", () => {
-    const cb = CATALOG.find((c) => c.id === b.dataset.fcStart);
+    const cb = findCandidate(b.dataset.fcStart);
+    if (!cb) return;
     const book = addBookFromCatalog(cb, "reading");
     toast(`"${cb.t}" is now on your nightstand.`);
     checkAchievements(); saveState();
     openBookSheet(book.id);
   }));
   $$("[data-fc-save]", scope).forEach((b) => b.addEventListener("click", () => {
-    const cb = CATALOG.find((c) => c.id === b.dataset.fcSave);
+    const cb = findCandidate(b.dataset.fcSave);
+    if (!cb) return;
     addBookFromCatalog(cb, "wishlist");
     saveState();
     toast("Saved to your wishlist.");
     b.innerHTML = `${icon("plus", { size: 14 })} Saved`; b.disabled = true;
   }));
   $$("[data-fc-skip]", scope).forEach((b) => b.addEventListener("click", () => {
-    const cb = CATALOG.find((c) => c.id === b.dataset.fcSkip);
+    const cb = findCandidate(b.dataset.fcSkip);
+    if (!cb) return;
     learnFrom(cb, "skip");
     if (!S.seenFeed.includes(cb.id)) S.seenFeed.push(cb.id);
     saveState();
@@ -353,20 +402,30 @@ function wireFeedActions(scope) {
 }
 
 function resolveCoversFor(items, scope) {
-  items.forEach((cb) => resolveCatalogCover(cb).then((url) => {
-    if (!url) return;
-    const card = $(`[data-fc="${cb.id}"]`, scope || feedRoot);
-    if (!card) return;
-    $(".bgcover", card).style.backgroundImage = `url(${url})`;
-    const cov = $(".fc-cover", card);
-    if (cov) cov.outerHTML = `<img class="cover xl fc-cover" src="${url}" alt="">`;
-  }));
+  items.forEach((cb) => {
+    if (cb.cover) return; // already have a real cover, nothing to resolve
+    resolveCatalogCover(cb).then((url) => {
+      if (!url) return;
+      const card = $(`[data-fc="${cb.id}"]`, scope || feedRoot);
+      if (!card) return;
+      $(".bgcover", card).style.backgroundImage = `url(${url})`;
+      const cov = $(".fc-cover", card);
+      if (cov) cov.outerHTML = `<img class="cover xl fc-cover" src="${url}" alt="">`;
+    });
+  });
 }
 
-/* "Deal me more" — append in place, keep scroll position, keep swiping */
-function appendMoreFeed() {
-  const newItems = recommendationFeed(8);
-  if (!newItems.length) { toast("That's every book we've got queued — check back after you read more."); return; }
+/* "Deal me more" — appends fresh, never-shown books in place (no scroll jump),
+   and pulls new candidates live from Open Library once the local pool runs low. */
+async function appendMoreFeed(btn) {
+  if (btn) { btn.disabled = true; btn.innerHTML = `${icon("refresh", { size: 16 })} Finding more…`; }
+  if (poolRemaining(feedShownIds) < 6) {
+    await expandRemoteCatalog();
+  }
+  const newItems = recommendationFeed(8, feedShownIds);
+  if (btn) { btn.disabled = false; btn.innerHTML = `${icon("refresh", { size: 16 })} Deal me more`; }
+  if (!newItems.length) { toast("That's everything we've got for now — read or wishlist a few more to unlock fresh picks."); return; }
+  newItems.forEach((c) => feedShownIds.add(c.id));
   const moreCard = $("#feed-more");
   const wrapper = document.createElement("div");
   wrapper.innerHTML = newItems.map(feedCardHTML).join("");
@@ -593,7 +652,7 @@ function renderJournal() {
     .map((id) => S.books.find((b) => b.id === id)).filter(Boolean);
 
   root.innerHTML = `
-    ${topbar()}
+    ${topbar(`<button class="iconbtn" data-back-home title="Back to Home">${icon("chev_l", { size: 18 })}</button>`)}
     <div class="view">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
         <h1>Journal</h1>
@@ -618,7 +677,7 @@ function renderJournal() {
               ${j.prompt ? `<div class="muted small je-prompt">${esc(j.prompt)}</div>` : ""}
               <div class="body">${j.kind === "quote" ? "❝ " + esc(j.text) + " ❞" : esc(j.text)}</div>
               ${j.images?.length ? `<div class="imgs">${j.images.map((src) => `<img src="${src}" alt="">`).join("")}</div>` : ""}
-              <div class="btn-row"><button class="btn quiet sm" data-jdel="${j.id}" style="color:var(--ember)">Remove</button></div>
+              <div class="btn-row"><button class="btn quiet sm" data-jedit="${j.id}">Edit</button></div>
             </div>`;
           }).join("")
         : `<div class="card empty">
@@ -630,20 +689,22 @@ function renderJournal() {
     </div>`;
 
   wireTopbar(root);
+  $("[data-back-home]", root)?.addEventListener("click", () => navigate("home"));
   $("#j-new")?.addEventListener("click", () => openJournalEditor());
   $("#j-first")?.addEventListener("click", () => openJournalEditor());
   $$("[data-jf]", root).forEach((b) => b.addEventListener("click", () => { journalFilter = b.dataset.jf; renderJournal(); }));
-  $$("[data-jdel]", root).forEach((b) => b.addEventListener("click", () => {
-    if (!confirm("Remove this entry for good?")) return;
-    S.journal = S.journal.filter((j) => j.id !== b.dataset.jdel);
-    saveState(); renderJournal();
+  $$("[data-jedit]", root).forEach((b) => b.addEventListener("click", () => {
+    const entry = S.journal.find((j) => j.id === b.dataset.jedit);
+    if (entry) openJournalEditor({ entry });
   }));
 }
 
-function openJournalEditor(bookId = null, presetKind = null) {
-  let images = [];
-  let kind = presetKind || "reflection";
-  let chosenPrompt = null;
+function openJournalEditor(opts = {}) {
+  const { bookId = null, presetKind = null, entry = null } = opts;
+  let images = entry ? [...(entry.images || [])] : [];
+  let kind = entry ? entry.kind : (presetKind || "reflection");
+  let chosenPrompt = entry ? entry.prompt : null;
+  const isEdit = !!entry;
 
   const promptsFor = (k) => k === "reflection" ? EMOTIONAL_PROMPTS : k === "character" ? CHARACTER_PROMPTS : k === "analysis" ? ANALYSIS_PROMPTS : [];
 
@@ -667,26 +728,35 @@ function openJournalEditor(bookId = null, presetKind = null) {
   };
 
   openSheet(`
-    <h2 style="margin-bottom:4px">New journal entry</h2>
-    <p class="muted" style="margin-bottom:12px">Deeper than a review — this one's just for you.</p>
+    <h2 style="margin-bottom:4px">${isEdit ? "Edit entry" : "New journal entry"}</h2>
+    <p class="muted" style="margin-bottom:12px">${isEdit ? "Change your mind? Rewrite it." : "Deeper than a review — this one's just for you."}</p>
     <label class="field"><span>About</span>
       <select id="je-book">
         <option value="">Freeform — just thoughts</option>
-        ${S.books.map((b) => `<option value="${b.id}" ${b.id === bookId ? "selected" : ""}>${esc(b.t)}</option>`).join("")}
+        ${S.books.map((b) => `<option value="${b.id}" ${b.id === (entry ? entry.bookId : bookId) ? "selected" : ""}>${esc(b.t)}</option>`).join("")}
       </select></label>
     <div class="eyebrow">Kind of entry</div>
     <div class="kind-row" id="je-kinds"></div>
     <div class="prompt-pills" id="je-prompts"></div>
-    <textarea id="je-text" rows="7"></textarea>
+    <textarea id="je-text" rows="7">${esc(entry ? entry.text : "")}</textarea>
     <label class="field" style="margin-top:12px"><span>Attach photos <span class="muted">(a marked-up page, a view, a note)</span></span>
       <div class="btn-row" style="margin-top:0">
         <button class="btn ghost sm" id="je-camera-btn">${icon("camera", { size: 15 })} Add photo</button>
       </div>
       <input id="je-imgs" type="file" accept="image/*" multiple class="hidden"></label>
     <div class="attach-strip" id="je-strip"></div>
-    <div class="btn-row"><button class="btn solid" id="je-save">Keep this</button></div>
+    <div class="btn-row">
+      <button class="btn solid" id="je-save">${isEdit ? "Save changes" : "Keep this"}</button>
+      ${isEdit ? `<button class="btn quiet" id="je-del" style="color:var(--ember)">Delete entry</button>` : ""}
+    </div>
   `, (sheet) => {
     draw(sheet);
+    const drawStrip = (m2) => {
+      $("#je-strip", m2).innerHTML = images.map((src, i) =>
+        `<div class="thumb"><img src="${src}"><button class="rm" data-rm="${i}">${icon("x", { size: 11 })}</button></div>`).join("");
+      $$("[data-rm]", m2).forEach((b) => b.addEventListener("click", () => { images.splice(+b.dataset.rm, 1); drawStrip(m2); }));
+    };
+    drawStrip(sheet);
     $("#je-camera-btn", sheet).addEventListener("click", () => $("#je-imgs", sheet).click());
     $("#je-imgs", sheet).addEventListener("change", async (e) => {
       for (const f of e.target.files) {
@@ -695,25 +765,30 @@ function openJournalEditor(bookId = null, presetKind = null) {
       }
       drawStrip(sheet);
     });
-    function drawStrip(m2) {
-      $("#je-strip", m2).innerHTML = images.map((src, i) =>
-        `<div class="thumb"><img src="${src}"><button class="rm" data-rm="${i}">${icon("x", { size: 11 })}</button></div>`).join("");
-      $$("[data-rm]", m2).forEach((b) => b.addEventListener("click", () => { images.splice(+b.dataset.rm, 1); drawStrip(m2); }));
-    }
     $("#je-save", sheet).addEventListener("click", () => {
       const text = $("#je-text", sheet).value.trim();
       if (!text && !images.length) { toast("A few words, or a photo — something to keep."); return; }
-      const deep = kind === "analysis" || kind === "character";
-      S.journal.push({
-        id: uid(), bookId: $("#je-book", sheet).value || null,
-        text, kind, prompt: chosenPrompt, images,
-        createdAt: new Date().toISOString(),
-      });
-      grantXP(deep ? XP_RULES.deepJournalEntry : XP_RULES.journalEntry, "Journal: " + kind);
-      checkAchievements(); saveState(); closeSheet();
-      toast(kind === "quote" ? "Pressed between the pages." : "Noted, carefully.");
-      if (currentView === "journal") renderJournal();
-      if (currentView === "library") render();
+      const newBookId = $("#je-book", sheet).value || null;
+      if (isEdit) {
+        Object.assign(entry, { bookId: newBookId, text, kind, prompt: chosenPrompt, images });
+        saveState(); closeSheet();
+        toast("Updated.");
+      } else {
+        const deep = kind === "analysis" || kind === "character";
+        S.journal.push({
+          id: uid(), bookId: newBookId, text, kind, prompt: chosenPrompt, images,
+          createdAt: new Date().toISOString(),
+        });
+        grantXP(deep ? XP_RULES.deepJournalEntry : XP_RULES.journalEntry, "Journal: " + kind);
+        checkAchievements(); saveState(); closeSheet();
+        toast(kind === "quote" ? "Pressed between the pages." : "Noted, carefully.");
+      }
+      render();
+    });
+    $("#je-del", sheet)?.addEventListener("click", () => {
+      if (!confirm("Remove this entry for good?")) return;
+      S.journal = S.journal.filter((j) => j.id !== entry.id);
+      saveState(); closeSheet(); render();
     });
   });
 }
@@ -820,7 +895,7 @@ function openBookSheet(id) {
     ${sims.length ? `<hr class="dash"><div class="eyebrow">You may also like</div>
       <div class="seg" style="margin:8px -20px 0;padding:4px 20px 8px">
         ${sims.map((c) => `<div data-sim="${c.id}" style="flex:0 0 92px;cursor:pointer">
-          ${genCoverHTML(c, "cover")}
+          ${c.cover ? `<img class="cover" src="${c.cover}" alt="">` : genCoverHTML(c, "cover")}
           <div class="small" style="margin-top:5px;line-height:1.25">${esc(c.t)}</div>
         </div>`).join("")}
       </div>` : ""}
@@ -831,7 +906,7 @@ function openBookSheet(id) {
       if (act === "startbook") { moveShelf(b, "reading"); closeSheet(); openBookSheet(b.id); toast("On the nightstand."); }
       if (act === "finish") { closeSheet(); finishBookFlow(b); }
       if (act === "fav") { b.fav = !b.fav; if (b.fav) learnFrom(b, "love"); saveState(); openBookSheet(b.id); }
-      if (act === "note") { closeSheet(); openJournalEditor(b.id); }
+      if (act === "note") { closeSheet(); openJournalEditor({ bookId: b.id }); }
       if (act === "edit") { closeSheet(); openManualAdd(b); }
       if (act === "drop") { moveShelf(b, "dropped"); closeSheet(); render(); toast("Dropped. Life's too short — no guilt."); }
       if (act === "card") { closeSheet(); openShareCard({ kind: "book", book: b }); }
@@ -849,10 +924,21 @@ function openBookSheet(id) {
       checkAchievements(); saveState(); toast("Review kept.");
     });
     $$("[data-sim]", sheet).forEach((el) => el.addEventListener("click", () => {
-      const cb = CATALOG.find((c) => c.id === el.dataset.sim);
+      const cb = findCandidate(el.dataset.sim);
+      if (!cb) return;
       closeSheet();
       openCatalogPreview(cb);
     }));
+    sims.forEach((c) => {
+      if (c.cover) return;
+      resolveCatalogCover(c).then((url) => {
+        if (!url) return;
+        const el = $(`[data-sim="${c.id}"]`, sheet);
+        if (!el) return;
+        const img = el.querySelector(".cover");
+        if (img) img.outerHTML = `<img class="cover" src="${url}" alt="">`;
+      });
+    });
     resolveCover(b);
   });
 }
@@ -934,7 +1020,7 @@ function renderTimer() {
   if (!book) { setTimer(null); renderTimer(); return; }
 
   root.innerHTML = `${topbar()}
-    <div class="view ${t.paused ? "paused" : ""}">
+    <div class="view timer-page ${t.paused ? "paused" : ""}">
       <div class="card eared timer-hero">
         <div class="breath">${logoChip(0, 90)}</div>
         <div class="time" id="tt">0:00</div>
@@ -973,7 +1059,7 @@ function renderTimer() {
     if (c.paused) { c.paused = false; c.last = Date.now(); } else { c.acc += Date.now() - c.last; c.paused = true; }
     setTimer(c); renderTimer();
   });
-  $("#tq").addEventListener("click", () => openJournalEditor(book.id, "quote"));
+  $("#tq").addEventListener("click", () => openJournalEditor({ bookId: book.id, presetKind: "quote" }));
   $("#tf").addEventListener("click", () => finishSessionFlow(book));
 }
 
@@ -1082,82 +1168,112 @@ function finishBookFlow(b) {
 /* ================================================================
    SHARE CARDS — 9:16, solid color, optional transparent (no cover)
 ================================================================ */
-function openShareCard(cfg) {
-  let theme = "dawn";
-  let transparent = false;
+/* ================================================================
+   SHARE CARDS — 9:16, gradient (non-transparent), always anchored to
+   a book cover. History is recorded so a card can be re-shared later.
+================================================================ */
+const fmtDateForCard = (d = new Date()) => d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+
+function resolveCardData(cfg) {
   const g = globalStats();
+  if (cfg.kind === "history") return cfg.data;
+
+  if (cfg.kind === "book") {
+    const st = bookStats(cfg.book.id);
+    return {
+      kicker: "finished & dog-eared", dateStr: fmtDateForCard(),
+      title: cfg.book.t, subtitle: cfg.book.a, coverUrl: cfg.book.cover, book: cfg.book,
+      stars: cfg.book.rating || null,
+      stats: [
+        [cfg.book.p || st.pages || "—", "pages"],
+        [fmtHM(st.minutes), "time inside"],
+        [st.days || 1, "reading days"],
+        [g.streak, "day streak"],
+      ],
+    };
+  }
+  if (cfg.kind === "session") {
+    return {
+      kicker: "reading session", dateStr: fmtDateForCard(),
+      title: cfg.book.t, subtitle: cfg.book.a, coverUrl: cfg.book.cover, book: cfg.book,
+      stats: [
+        [cfg.session.pagesRead, "pages"],
+        [fmtHM(cfg.session.minutes), "duration"],
+        [cfg.session.pace ? cfg.session.pace + "/h" : "—", "pace"],
+        [g.streak, "day streak"],
+      ],
+    };
+  }
+  if (cfg.kind === "monthwrap") {
+    const anchor = cfg.ms.topBook || null;
+    return {
+      kicker: cfg.ms.label, dateStr: fmtDateForCard(),
+      title: anchor ? anchor.t : `${cfg.ms.finished.length} book${cfg.ms.finished.length === 1 ? "" : "s"} this month`,
+      subtitle: anchor ? anchor.a : "", coverUrl: anchor?.cover || null, book: anchor,
+      stats: [
+        [cfg.ms.pages, "pages read"],
+        [fmtHM(cfg.ms.minutes), "time reading"],
+        [cfg.ms.bestStreak, "best streak"],
+        [cfg.ms.topGenres[0] ? GENRES.find((x) => x.id === cfg.ms.topGenres[0])?.label : "—", "top genre"],
+      ],
+    };
+  }
+  if (cfg.kind === "weekstats") {
+    const streak = computeStreak();
+    return {
+      kicker: "WEEKLY REPORT", dateStr: weekRangeLabel(),
+      title: `${pagesThisWeek()} pages this week`,
+      subtitle: sessionsThisWeek() ? `across ${sessionsThisWeek()} session${sessionsThisWeek() === 1 ? "" : "s"}` : "a quieter week — that's alright",
+      coverUrl: null, book: null, shelfBooks: booksForShelf(12),
+      stats: [
+        [pagesThisWeek(), "pages this week"],
+        [fmtHM(minutesThisWeek()), "time this week"],
+        [streak, "day streak"],
+        [booksFinishedThisWeek(), "books finished"],
+      ],
+    };
+  }
+  // "wrap" — lifetime "My Reading Life" card, anchored to a representative book
+  const anchor = pickAnchorBook();
+  return {
+    kicker: "MY READING LIFE", dateStr: fmtDateForCard(),
+    title: anchor ? anchor.t : "A reading life, just beginning",
+    subtitle: anchor ? anchor.a : "", coverUrl: anchor?.cover || null, book: anchor,
+    stats: [
+      [g.totalPages, "pages read"],
+      [fmtHM(g.totalMin), "total time"],
+      [g.bestStreak, "best streak"],
+      ["Lv " + levelForXP(S.xp), "reader level"],
+    ],
+  };
+}
+
+function openShareCard(cfg) {
+  const hasAnchor = cfg.kind === "history" ? !!(cfg.data?.coverUrl || cfg.data?.book) : cfg.kind !== "weekstats";
+  const styleDefs = hasAnchor
+    ? [["theme", "Cover theme"], ["gradient", "Classic"], ["transparent", "Transparent"]]
+    : [["gradient", "Default"], ["transparent", "Transparent"]];
+  let style = styleDefs[0][0];
+  const cardData = resolveCardData(cfg);
+  if (cfg.kind !== "history") recordShareHistory({ kind: cfg.kind, ...cardData });
 
   const build = (canvas) => {
-    if (cfg.kind === "book") {
-      const st = bookStats(cfg.book.id);
-      drawShareCard(canvas, {
-        theme, transparent, kind: "book", book: cfg.book,
-        coverUrl: cfg.book.cover,
-        kicker: "finished & dog-eared",
-        title: cfg.book.t, subtitle: cfg.book.a,
-        stars: cfg.book.rating || null,
-        stats: [
-          [cfg.book.p || st.pages || "—", "pages"],
-          [fmtHM(st.minutes), "time inside"],
-          [st.days || 1, "reading days"],
-          [g.streak, "day streak"],
-        ],
-        profileName: S.profile.name,
-      });
-    } else if (cfg.kind === "session") {
-      drawShareCard(canvas, {
-        theme, transparent, kind: "wrap",
-        kicker: "reading session",
-        title: cfg.book.t, subtitle: cfg.book.a,
-        stats: [
-          [cfg.session.pagesRead, "pages"],
-          [fmtHM(cfg.session.minutes), "duration"],
-          [cfg.session.pace ? cfg.session.pace + "/h" : "—", "pace"],
-          [g.streak, "day streak"],
-        ],
-        profileName: S.profile.name,
-      });
-    } else if (cfg.kind === "monthwrap") {
-      drawShareCard(canvas, {
-        theme, transparent, kind: "wrap",
-        kicker: cfg.ms.label,
-        title: `${cfg.ms.finished.length} book${cfg.ms.finished.length === 1 ? "" : "s"} this month`,
-        subtitle: cfg.ms.topBook ? "Top book: " + cfg.ms.topBook.t : "",
-        stats: [
-          [cfg.ms.pages, "pages read"],
-          [fmtHM(cfg.ms.minutes), "time reading"],
-          [cfg.ms.bestStreak, "day streak"],
-          [cfg.ms.topGenres[0] ? GENRES.find((x) => x.id === cfg.ms.topGenres[0])?.label : "—", "top genre"],
-        ],
-        profileName: S.profile.name,
-      });
-    } else {
-      drawShareCard(canvas, {
-        theme, transparent, kind: "wrap",
-        kicker: "my reading life",
-        title: `${g.finished} books & counting`,
-        subtitle: `${Math.round(g.totalMin / 60)} hours inside other worlds`,
-        stats: [
-          [g.totalPages, "pages read"],
-          [fmtHM(g.totalMin), "total time"],
-          [g.bestStreak, "best streak"],
-          ["Lv " + levelForXP(S.xp), "reader level"],
-        ],
-        profileName: S.profile.name,
-      });
-    }
+    drawShareCard(canvas, {
+      style,
+      kicker: cardData.kicker, dateStr: cardData.dateStr,
+      title: cardData.title, subtitle: cardData.subtitle,
+      coverUrl: cardData.coverUrl, book: cardData.book, stars: cardData.stars,
+      shelfBooks: cardData.shelfBooks, stats: cardData.stats, profileName: S.profile.name,
+    });
   };
+  const filenameFor = (s) => s === "theme" ? "dogeared-card-cover-theme.png" : s === "transparent" ? "dogeared-card-transparent.png" : "dogeared-card-classic.png";
 
   openSheet(`
     <h2 style="text-align:center;margin-bottom:4px">Share it beautifully</h2>
     <p class="muted" style="text-align:center">Made for Stories, Threads, and group chats.</p>
     <div class="share-wrap" style="margin-top:12px"><canvas id="sc"></canvas></div>
     <div class="opt-row" id="style-row">
-      <button data-style="cover" class="active">With cover</button>
-      <button data-style="transparent">Transparent (no cover)</button>
-    </div>
-    <div class="opt-row" id="theme-row">
-      ${Object.keys(CARD_THEMES).map((k) => `<button data-th="${k}" class="${k === theme ? "active" : ""}">${k}</button>`).join("")}
+      ${styleDefs.map(([id, label], i) => `<button data-style="${id}" class="${i === 0 ? "active" : ""}">${label}</button>`).join("")}
     </div>
     <div class="btn-row" style="justify-content:center">
       <button class="btn solid" id="sc-share">Share</button>
@@ -1167,21 +1283,15 @@ function openShareCard(cfg) {
     const canvas = $("#sc", sheet);
     build(canvas);
     $$("[data-style]", sheet).forEach((b) => b.addEventListener("click", () => {
-      transparent = b.dataset.style === "transparent";
+      style = b.dataset.style;
       $$("[data-style]", sheet).forEach((x) => x.classList.toggle("active", x === b));
-      $("#theme-row", sheet).style.opacity = transparent ? "0.35" : "1";
-      build(canvas);
-    }));
-    $$("[data-th]", sheet).forEach((b) => b.addEventListener("click", () => {
-      theme = b.dataset.th;
-      $$("[data-th]", sheet).forEach((x) => x.classList.toggle("active", x === b));
       build(canvas);
     }));
     $("#sc-dl", sheet).addEventListener("click", () => {
       canvas.toBlob((blob) => {
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
-        a.download = transparent ? "dogeared-card-transparent.png" : "dogeared-card.png";
+        a.download = filenameFor(style);
         a.click();
         setTimeout(() => URL.revokeObjectURL(a.href), 3000);
       }, "image/png");
@@ -1341,7 +1451,10 @@ function renderProfile() {
 
   root.innerHTML = `${topbar()}
     <div class="view">
-      <h1 style="margin-bottom:16px">${esc(S.profile.name)}</h1>
+      <div class="profile-head rise">
+        <button class="avatar-btn" id="pf-avatar-btn" aria-label="Change avatar">${avatarHTML(60)}</button>
+        <h1>${esc(S.profile.name)}</h1>
+      </div>
 
       <div class="card eared level-card rise">
         <div class="level-badge"><div class="n">${lv}</div><div class="l">LEVEL</div></div>
@@ -1364,7 +1477,7 @@ function renderProfile() {
       <div class="card rise d2">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
           <span class="eyebrow" style="margin:0">Achievements · ${unlockedN}/${ACHIEVEMENTS.length}</span>
-          <button class="btn quiet sm" data-share-wrap>Share my stats</button>
+          <button class="btn quiet sm" data-share-wrap>Share my week</button>
         </div>
         <div class="ach-grid">
           ${ACHIEVEMENTS.map((a) => `<div class="ach ${S.unlocked[a.id] ? "unlocked" : ""}" title="${esc(a.d)}">
@@ -1379,6 +1492,22 @@ function renderProfile() {
           <button data-theme="light" class="${S.settings.theme === "light" ? "active" : ""}">${icon("sun", { size: 16 })} Light</button>
           <button data-theme="dark" class="${S.settings.theme === "dark" ? "active" : ""}">${icon("moon", { size: 16 })} Dark</button>
         </div>
+      </div>
+
+      <div class="card rise d3">
+        <div class="eyebrow">Recent shares</div>
+        ${(S.shareHistory || []).length ? `
+          <div class="share-history">
+            ${S.shareHistory.slice(0, 6).map((h) => `
+              <div class="share-hist-row" data-reshare="${h.id}">
+                ${h.coverUrl ? `<img class="cover" src="${h.coverUrl}" alt="">` : genCoverHTML({ t: h.title, a: h.subtitle, g: h.book?.g }, "cover")}
+                <div class="meta">
+                  <div class="t">${esc(h.title)}</div>
+                  <div class="muted small">${esc(h.kicker)} · ${esc(h.dateStr)}</div>
+                </div>
+                <button class="btn sm ghost">${icon("share", { size: 13 })} Share again</button>
+              </div>`).join("")}
+          </div>` : `<p class="muted small">Nothing shared yet — cards you generate (even if you close them without sharing) will show up here so you can send them later.</p>`}
       </div>
 
       <div class="card rise d3">
@@ -1405,7 +1534,12 @@ function renderProfile() {
     </div>`;
 
   wireTopbar(root);
-  $("[data-share-wrap]", root).addEventListener("click", () => openShareCard({ kind: "wrap" }));
+  $("[data-share-wrap]", root).addEventListener("click", () => openShareCard({ kind: "weekstats" }));
+  $("#pf-avatar-btn", root).addEventListener("click", openAvatarPicker);
+  $$("[data-reshare]", root).forEach((row) => row.querySelector("button").addEventListener("click", () => {
+    const entry = S.shareHistory.find((h) => h.id === row.dataset.reshare);
+    if (entry) openShareCard({ kind: "history", data: entry });
+  }));
   $$("[data-theme]", root).forEach((b) => b.addEventListener("click", () => {
     S.settings.theme = b.dataset.theme; saveState(); applyTheme(); render();
   }));
@@ -1465,6 +1599,42 @@ function openTasteEditor() {
       S.profile.genres = picks.genres; S.profile.moods = picks.moods; S.profile.dailyGoal = picks.goal;
       picks.genres.forEach((g) => S.affinity.genres[g] = Math.max(S.affinity.genres[g] || 0, 2));
       saveState(); closeSheet(); feedItems = []; render(); toast("Recommendations retuned.");
+    });
+  });
+}
+
+function openAvatarPicker() {
+  let selected = S.profile.avatar || `preset:${AVATAR_PRESETS[0].id}`;
+  openSheet(`
+    <h2 style="text-align:center;margin-bottom:4px">Pick a face for your shelf</h2>
+    <p class="muted" style="text-align:center;margin-bottom:16px">Same little reader, different mood.</p>
+    <div class="avatar-grid" id="av-grid">
+      ${AVATAR_PRESETS.map((p) => `<button class="avatar-opt ${selected === "preset:" + p.id ? "on" : ""}" data-av="preset:${p.id}">
+        <img src="${p.file}" alt="${p.label}"><span>${p.label}</span>
+      </button>`).join("")}
+    </div>
+    <hr class="dash">
+    <div style="text-align:center">
+      <button class="btn ghost sm" id="av-upload">${icon("camera", { size: 15 })} Upload your own photo</button>
+      <input id="av-file" type="file" accept="image/*" class="hidden">
+    </div>
+    <div class="btn-row" style="justify-content:center"><button class="btn solid" id="av-save">Save avatar</button></div>
+  `, (sheet) => {
+    $$("[data-av]", sheet).forEach((b) => b.addEventListener("click", () => {
+      selected = b.dataset.av;
+      $$("[data-av]", sheet).forEach((x) => x.classList.toggle("on", x === b));
+    }));
+    $("#av-upload", sheet).addEventListener("click", () => $("#av-file", sheet).click());
+    $("#av-file", sheet).addEventListener("change", async (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      selected = await fileToDataURL(f, 320, 0.85);
+      toast("Photo ready — hit Save to use it.");
+      $$("[data-av]", sheet).forEach((x) => x.classList.remove("on"));
+    });
+    $("#av-save", sheet).addEventListener("click", () => {
+      S.profile.avatar = selected;
+      saveState(); closeSheet(); render();
+      toast("That's you now.");
     });
   });
 }
