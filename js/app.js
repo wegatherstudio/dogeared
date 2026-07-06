@@ -17,7 +17,7 @@ function resolvedTheme() {
 function applyTheme() {
   const t = resolvedTheme();
   document.documentElement.dataset.theme = t;
-  $('meta[name="theme-color"]')?.setAttribute("content", t === "dark" ? "#16130E" : "#F3EFE1");
+  $('meta[name="theme-color"]')?.setAttribute("content", t === "dark" ? "#16130E" : "#F3F2F7");
 }
 applyTheme();
 systemDarkQuery?.addEventListener?.("change", () => {
@@ -200,7 +200,7 @@ function navigate(v) {
   if (v !== "discover") window.scrollTo({ top: 0 });
 }
 function updateCtaState() {
-  const cta = $(".tabbar .cta");
+  const cta = $(".tabbar .timer-tab");
   if (!cta) return;
   const running = !!getTimer();
   cta.classList.toggle("pulse", running && currentView !== "timer");
@@ -2313,7 +2313,6 @@ pushBackGuard();
 ================================================================ */
 function boot() {
   $$("nav.tabbar [data-view]").forEach((b) => b.addEventListener("click", () => navigate(b.dataset.view)));
-  $(".tabbar .cta").addEventListener("click", () => navigate("timer"));
   if (getTimer()) navigate("timer");
   else navigate("home");
   startHeartbeat();

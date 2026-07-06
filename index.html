@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Dogeared — Build a Reading Life</title>
 <meta name="description" content="A premium, social reading companion. Track sessions like workouts, reflect in a private journal, discover books made for you, and turn reading into a ritual.">
-<meta name="theme-color" content="#F3EFE1">
+<meta name="theme-color" content="#F3F2F7">
 
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icons/favicon.png">
@@ -34,7 +34,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 .001 0z"/><path d="m14.5 9.5-2 5-5 2 2-5z"/></svg>
         Discover
       </button>
-      <div class="dock-spacer" aria-hidden="true"></div>
+      <button data-view="timer" class="timer-tab" aria-label="Reading session">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+        Timer
+      </button>
       <button data-view="library" aria-label="Library">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h5v16H4z"/><path d="M9 6h5v14H9z"/><path d="m14 6.5 4.6-1 3 15-4.6 1z"/></svg>
         Library
@@ -44,9 +47,6 @@
         Profile
       </button>
     </div>
-    <button class="cta" aria-label="Start reading session">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
-    </button>
   </nav>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
