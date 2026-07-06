@@ -1314,16 +1314,64 @@ function resolveCardData(cfg) {
     };
   }
   if (cfg.kind === "monthwrap") {
-    const anchor = cfg.ms.topBook || null;
+    const ms = cfg.ms, anchor = ms.topBook || null;
+    const hours = Math.round(ms.minutes / 60);
+    const variant = cfg.variant || "stats";
+
+    if (variant === "quote" && ms.quote) {
+      const qb = ms.quote.bookId ? S.books.find((b) => b.id === ms.quote.bookId) : null;
+      return {
+        kicker: "STANDOUT LINE", dateStr: fmtDateForCard(),
+        title: `"${ms.quote.text}"`, subtitle: qb ? qb.t : "freeform",
+        coverUrl: qb?.cover || null, book: qb || null,
+        stats: [[ms.label, "this month"], [ms.finished.length, "books finished"]],
+      };
+    }
+    if (variant === "compare") {
+      const prevMs = cfg.prevMs;
+      const pageDelta = ms.pages - prevMs.pages;
+      const hrsDelta = hours - Math.round(prevMs.minutes / 60);
+      return {
+        kicker: "MONTH OVER MONTH", dateStr: fmtDateForCard(),
+        title: `${pageDelta >= 0 ? "+" : ""}${pageDelta} pages vs last month`,
+        subtitle: ms.label, coverUrl: anchor?.cover || null, book: anchor,
+        stats: [
+          [ms.pages, "pages this month"], [prevMs.pages, "pages last month"],
+          [`${hrsDelta >= 0 ? "+" : ""}${hrsDelta}h`, "time change"], [hours + "h", "time this month"],
+        ],
+      };
+    }
+    if (variant === "collage") {
+      return {
+        kicker: "BOOKS THIS MONTH", dateStr: fmtDateForCard(),
+        title: `${ms.finished.length} book${ms.finished.length === 1 ? "" : "s"} lived in`,
+        subtitle: ms.label, coverUrl: anchor?.cover || null, book: anchor,
+        stats: [[ms.pages, "pages read"], [hours + "h", "time reading"], [ms.bestStreak, "best streak"], [ms.booksTouched.length, "books touched"]],
+      };
+    }
+    if (variant === "recap") {
+      return cfg.quiet ? {
+        kicker: "A QUIET MONTH", dateStr: fmtDateForCard(),
+        title: "And that's alright.", subtitle: ms.label, coverUrl: null, book: null,
+        stats: [[ms.pages, "pages read"], [hours + "h", "time reading"]],
+      } : {
+        kicker: "WELL READ", dateStr: fmtDateForCard(),
+        title: anchor ? `"${anchor.t}" stayed with you` : "A steady month of pages",
+        subtitle: ms.topGenres.length ? "Mostly " + ms.topGenres.map((g) => GENRES.find((x) => x.id === g)?.label).join(" & ") : ms.label,
+        coverUrl: anchor?.cover || null, book: anchor,
+        stats: [[ms.pages, "pages read"], [hours + "h", "time reading"], [ms.bestStreak, "best streak"], [ms.finished.length, "books finished"]],
+      };
+    }
+    // "intro" and "stats" (default) — the full month-in-numbers card
     return {
-      kicker: cfg.ms.label, dateStr: fmtDateForCard(),
-      title: anchor ? anchor.t : `${cfg.ms.finished.length} book${cfg.ms.finished.length === 1 ? "" : "s"} this month`,
+      kicker: ms.label, dateStr: fmtDateForCard(),
+      title: anchor ? anchor.t : `${ms.finished.length} book${ms.finished.length === 1 ? "" : "s"} this month`,
       subtitle: anchor ? anchor.a : "", coverUrl: anchor?.cover || null, book: anchor,
       stats: [
-        [cfg.ms.pages, "pages read"],
-        [fmtHM(cfg.ms.minutes), "time reading"],
-        [cfg.ms.bestStreak, "best streak"],
-        [cfg.ms.topGenres[0] ? GENRES.find((x) => x.id === cfg.ms.topGenres[0])?.label : "—", "top genre"],
+        [ms.pages, "pages read"],
+        [fmtHM(ms.minutes), "time reading"],
+        [ms.bestStreak, "best streak"],
+        [ms.topGenres[0] ? GENRES.find((x) => x.id === ms.topGenres[0])?.label : "—", "top genre"],
       ],
     };
   }
@@ -1359,9 +1407,10 @@ function resolveCardData(cfg) {
 
 function openShareCard(cfg) {
   const hasAnchor = cfg.kind === "history" ? !!(cfg.data?.coverUrl || cfg.data?.book) : cfg.kind !== "weekstats";
-  const styleDefs = hasAnchor
+  let styleDefs = hasAnchor
     ? [["theme", "Cover theme"], ["gradient", "Classic"], ["transparent", "Transparent"]]
     : [["gradient", "Default"], ["transparent", "Transparent"]];
+  if (cfg.kind === "monthwrap") styleDefs = styleDefs.filter(([id]) => id !== "transparent");
   let style = styleDefs[0][0];
   const cardData = resolveCardData(cfg);
   if (cfg.kind !== "history") recordShareHistory({ kind: cfg.kind, ...cardData });
@@ -1380,7 +1429,8 @@ function openShareCard(cfg) {
   openSheet(`
     <h2 style="text-align:center;margin-bottom:4px">Share it beautifully</h2>
     <p class="muted" style="text-align:center">Made for Stories, Threads, and group chats.</p>
-    <div class="share-wrap" style="margin-top:12px"><canvas id="sc"></canvas></div>
+    <div class="share-wrap ${style === "transparent" ? "preview-dark" : ""}" id="share-wrap-el" style="margin-top:12px"><canvas id="sc"></canvas></div>
+    <p class="muted small" id="sc-transparent-note" style="text-align:center;margin-top:6px;${style === "transparent" ? "" : "display:none"}">Dark backdrop shown for preview only — the saved image is fully transparent.</p>
     <div class="opt-row" id="style-row">
       ${styleDefs.map(([id, label], i) => `<button data-style="${id}" class="${i === 0 ? "active" : ""}">${label}</button>`).join("")}
     </div>
@@ -1394,6 +1444,8 @@ function openShareCard(cfg) {
     $$("[data-style]", sheet).forEach((b) => b.addEventListener("click", () => {
       style = b.dataset.style;
       $$("[data-style]", sheet).forEach((x) => x.classList.toggle("active", x === b));
+      $("#share-wrap-el", sheet).classList.toggle("preview-dark", style === "transparent");
+      $("#sc-transparent-note", sheet).style.display = style === "transparent" ? "" : "none";
       build(canvas);
     }));
     $("#sc-dl", sheet).addEventListener("click", () => {
@@ -1497,11 +1549,14 @@ function openMonthlyWrap(ym) {
     return s;
   }
 
+  const slideVariants = ["intro", "stats", "collage", "quote", "compare", "recap"];
+
   const el = document.createElement("div");
   el.className = "wrap-viewer";
   document.body.appendChild(el);
 
   const draw = () => {
+    const variant = slideVariants[idx];
     el.innerHTML = `
       <div class="wrap-progress">${slides.map((_, i) => `<i class="${i < idx ? "done" : i === idx ? "now" : ""}"></i>`).join("")}</div>
       <button class="close-x wrap-close">${icon("x", { size: 16 })}</button>
@@ -1511,7 +1566,7 @@ function openMonthlyWrap(ym) {
         <button class="tap-zone right" aria-label="Next"></button>
       </div>
       <div class="wrap-foot">
-        ${idx > 1 && idx < slides.length - 1 ? `<button class="btn ghost sm" id="wr-share">${icon("share", { size: 14 })} Share this</button>` : "<span></span>"}
+        ${variant ? `<button class="btn ghost sm" id="wr-share">${icon("share", { size: 14 })} Share this</button>` : "<span></span>"}
         <div class="btn-row" style="margin:0">
           ${idx > 0 ? `<button class="iconbtn" id="wr-prev">${icon("chev_l", { size: 18 })}</button>` : ""}
           ${idx < slides.length - 1 ? `<button class="iconbtn" id="wr-next">${icon("chev_r", { size: 18 })}</button>` : ""}
@@ -1523,11 +1578,11 @@ function openMonthlyWrap(ym) {
     $(".tap-zone.right", el)?.addEventListener("click", () => go(1));
     $("#wr-prev", el)?.addEventListener("click", () => go(-1));
     $("#wr-next", el)?.addEventListener("click", () => go(1));
-    $("#wr-share", el)?.addEventListener("click", () => openShareCard({ kind: "monthwrap", ms }));
+    $("#wr-share", el)?.addEventListener("click", () => openShareCard({ kind: "monthwrap", ms, prevMs, quiet, variant }));
     $("#wg-range", el)?.addEventListener("input", (e) => { newGoal = +e.target.value; $("#wg-n", el).textContent = newGoal; });
     $("#wg-save", el)?.addEventListener("click", () => {
       S.profile.dailyGoal = newGoal; saveState();
-      toast("Next month's intention is set.");
+      toast(`Daily goal set to ${newGoal} pages — updated in Your taste too.`);
       finish();
     });
   };
@@ -1561,15 +1616,6 @@ function renderProfile() {
 
   root.innerHTML = `${topbar()}
     <div class="view">
-      <div class="card eared reader-profile-card rise">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <span class="eyebrow" style="margin:0">${icon("sparkle", { size: 12 })} Your reading profile</span>
-          <button class="iconbtn" id="pf-refresh-profile" title="Refresh">${icon("refresh", { size: 14 })}</button>
-        </div>
-        <p style="font-size:14.5px;line-height:1.55;margin:0">${esc(readerProfileText)}</p>
-        <p class="muted small" style="margin-top:8px">Updates weekly from your activity${navigator.onLine ? "" : " (you're offline right now, but this still works — it's computed on this device)"}.</p>
-      </div>
-
       <div class="profile-head rise">
         <button class="avatar-btn" id="pf-avatar-btn" aria-label="Change avatar">${avatarHTML(60)}</button>
         <h1>${esc(S.profile.name)}</h1>
@@ -1585,6 +1631,15 @@ function renderProfile() {
           <div class="xpbar"><i style="width:${lvPct}%"></i></div>
           <p class="muted small" style="margin-top:7px">XP grows with minutes, pages, finished books, journal entries, and streaks.</p>
         </div>
+      </div>
+
+      <div class="card eared reader-profile-card rise d1">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span class="eyebrow" style="margin:0">${icon("sparkle", { size: 12 })} Your reading profile</span>
+          <button class="iconbtn" id="pf-refresh-profile" title="Refresh">${icon("refresh", { size: 14 })}</button>
+        </div>
+        <p style="font-size:14.5px;line-height:1.55;margin:0">${esc(readerProfileText)}</p>
+        <p class="muted small" style="margin-top:8px">Updates weekly from your activity${navigator.onLine ? "" : " (you're offline right now, but this still works — it's computed on this device)"}.</p>
       </div>
 
       <div class="pillstats rise d1">
