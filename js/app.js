@@ -198,6 +198,7 @@ function navigate(v) {
   render();
   updateCtaState();
   if (v !== "discover") window.scrollTo({ top: 0 });
+  if (typeof pinDockToVisualViewport === "function") setTimeout(pinDockToVisualViewport, 60);
 }
 function updateCtaState() {
   const cta = $(".tabbar .timer-tab");
@@ -384,6 +385,14 @@ function renderDiscover() {
   resolveCoversFor(feedItems, feedEl);
 
   $("[data-more]", feedRoot)?.addEventListener("click", (e) => appendMoreFeed(e.currentTarget));
+
+  // extra safety net for the dock-pinning fix: Discover's snap-swiping is
+  // exactly the gesture most likely to trigger Safari's toolbar animation
+  let _dockPinRaf = null;
+  feedEl.addEventListener("scroll", () => {
+    if (_dockPinRaf) return;
+    _dockPinRaf = requestAnimationFrame(() => { pinDockToVisualViewport(); _dockPinRaf = null; });
+  }, { passive: true });
 }
 
 function fitTitleSize(t) {
@@ -2311,6 +2320,37 @@ pushBackGuard();
 /* ================================================================
    BOOT
 ================================================================ */
+/* ================================================================
+   DOCK PINNING — the real fix for the iOS Safari dock drift/whitespace
+   bug. CSS "position: fixed; bottom: 0" pins an element to the LAYOUT
+   viewport, but Safari's address bar animation temporarily makes the
+   VISUAL viewport smaller than that — especially during vigorous
+   scroll gestures like Discover's swipe-through-cards. When that gap
+   opens up, a fixed-bottom element can appear to float with dead
+   space beneath it. dvh/overscroll-behavior CSS narrows this but can't
+   fully close it, because the dock's *position* was never actually
+   viewport-size-aware — it just assumed bottom:0 always meant the
+   true bottom. This reads the real, currently-visible viewport
+   directly via the visualViewport API (which fires continuously
+   during the address-bar animation, not just after) and nudges the
+   dock to match it in real time, on every device that supports it. */
+function pinDockToVisualViewport() {
+  const dock = document.querySelector("nav.tabbar");
+  if (!dock || !window.visualViewport) return;
+  const vv = window.visualViewport;
+  const gap = window.innerHeight - (vv.height + vv.offsetTop);
+  // Safari's address bar is at most ~60px — a bigger gap means something else
+  // (an on-screen keyboard, etc.), which isn't the bug this targets.
+  dock.style.transform = (gap > 0.5 && gap < 80) ? `translateY(-${gap}px)` : "";
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", pinDockToVisualViewport);
+  window.visualViewport.addEventListener("scroll", pinDockToVisualViewport);
+}
+window.addEventListener("load", pinDockToVisualViewport);
+window.addEventListener("orientationchange", () => setTimeout(pinDockToVisualViewport, 50));
+pinDockToVisualViewport();
+
 function boot() {
   $$("nav.tabbar [data-view]").forEach((b) => b.addEventListener("click", () => navigate(b.dataset.view)));
   if (getTimer()) navigate("timer");

@@ -227,6 +227,7 @@ nav.tabbar {
   display: flex; justify-content: center;
   padding: 0 16px calc(14px + env(safe-area-inset-bottom, 0px));
   pointer-events: none;
+  transition: transform .15s linear;
 }
 .dock {
   pointer-events: auto;
