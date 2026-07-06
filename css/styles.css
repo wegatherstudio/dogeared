@@ -27,7 +27,7 @@
   --r-lg: 24px;
   --r-md: 16px;
   --r-sm: 10px;
-  --nav-h: calc(54px + env(safe-area-inset-bottom, 0px));
+  --nav-h: 82px;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -91,7 +91,7 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--o
 button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 8px; }
 textarea { resize: vertical; min-height: 90px; }
 
-#app { max-width: 660px; margin: 0 auto; min-height: 100vh; min-height: 100dvh; min-height: var(--app-height, 100dvh); padding: 0 18px calc(var(--nav-h) + 30px); }
+#app { max-width: 660px; margin: 0 auto; min-height: 100vh; min-height: 100dvh; padding: 0 18px calc(var(--nav-h) + 30px); }
 @media (min-width: 900px) { #app { max-width: 720px; } }
 
 .muted { color: var(--ink-2); font-size: 13.5px; }
@@ -223,33 +223,30 @@ hr.dash { border: none; border-top: 1px dashed var(--line); margin: 16px 0; }
 
 /* ---------- bottom nav: floating glass dock, session CTA centered & raised ---------- */
 nav.tabbar {
-  position: fixed; left: 0; right: 0; z-index: 50;
-  /* --app-height is measured directly in JS (the real, current visible
-     height) — placing the dock's top there and shifting it up by its own
-     height pins its bottom edge to the true bottom of the screen, without
-     depending on the browser's own interpretation of "bottom: 0" on a
-     fixed element, which is what was unreliable. Falls back to 100vh
-     (old behavior) for the brief instant before JS first runs. */
-  top: var(--app-height, 100vh);
-  transform: translateY(-100%);
-  transition: transform .15s linear;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  display: flex; justify-content: center;
+  padding: 0 16px calc(14px + env(safe-area-inset-bottom, 0px));
+  pointer-events: none;
 }
 .dock {
-  display: flex; align-items: stretch; justify-content: space-between;
-  width: 100%;
-  padding: 8px 6px calc(8px + env(safe-area-inset-bottom, 0px));
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  pointer-events: auto;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 4px;
+  width: 100%; max-width: 420px;
+  height: 64px;
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
   backdrop-filter: blur(22px) saturate(1.5);
   -webkit-backdrop-filter: blur(22px) saturate(1.5);
-  border-top: 1px solid var(--line);
-  box-shadow: 0 -4px 16px rgba(0,0,0,.05);
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  padding: 6px 14px;
+  box-shadow: var(--shadow-2);
 }
 .dock button {
-  flex: 1 1 0; min-width: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-  padding: 6px 2px;
+  flex: 1 1 0; height: 100%; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   font-size: 9.5px; letter-spacing: 0.02em; color: var(--ink-3);
-  border-radius: 12px;
+  border-radius: 18px;
   transition: color .25s, background .25s;
 }
 .dock button svg { width: 20px; height: 20px; transition: transform .3s var(--ease); }
@@ -274,19 +271,20 @@ nav.tabbar {
    ONBOARDING — cinematic, centered
 ================================================================ */
 .onboard {
-  position: fixed; inset: 0; height: 100vh; height: 100dvh; height: var(--app-height, 100dvh); z-index: 100;
+  position: fixed; inset: 0; z-index: 100;
   background: var(--bg);
   overflow: hidden;
   display: flex; flex-direction: column;
 }
 .onboard .aurora {
-  display: none; /* was a gold-tinted wash over the whole screen — removed per the neutral background request */
+  position: absolute; inset: 0;
+  background: var(--tint);
 }
 .onboard .ob-inner {
   position: relative; z-index: 1;
   max-width: 560px; width: 100%; margin: 0 auto;
   flex: 1; display: flex; flex-direction: column;
-  padding: max(26px, env(safe-area-inset-top)) 24px calc(26px + env(safe-area-inset-bottom, 0px));
+  padding: 26px 24px calc(26px + env(safe-area-inset-bottom, 0px));
 }
 .ob-progress { display: flex; gap: 6px; margin-bottom: 10px; }
 .ob-progress i { flex: 1; height: 3px; border-radius: 99px; background: var(--line); overflow: hidden; }
@@ -395,7 +393,7 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 
 /* ================================================================
    DISCOVER — vertical snap feed
 ================================================================ */
-.feed { position: fixed; inset: 0; height: 100vh; height: 100dvh; height: var(--app-height, 100dvh); overflow-y: auto; overscroll-behavior-y: none; -webkit-overflow-scrolling: touch; scroll-snap-type: y mandatory; z-index: 10; background: var(--bg); }
+.feed { position: fixed; inset: 0; height: 100vh; height: 100dvh; overflow-y: auto; overscroll-behavior-y: none; -webkit-overflow-scrolling: touch; scroll-snap-type: y mandatory; z-index: 10; background: var(--bg); }
 .feed::-webkit-scrollbar { display: none; }
 .feed-card { scroll-snap-align: start; scroll-snap-stop: always; height: 100%; position: relative; display: flex; flex-direction: column; padding: calc(56px + env(safe-area-inset-top)) 20px calc(var(--nav-h) + 34px); overflow: hidden; }
 .feed-card .bgwash { position: absolute; inset: 0; opacity: .96; }
@@ -478,7 +476,7 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 
 .rich-body img { max-width: 100%; border-radius: 10px; margin: 8px 0; display: block; }
 
 /* ---------------- full-screen journal editor ---------------- */
-.journal-fs { position: fixed; inset: 0; height: 100vh; height: 100dvh; height: var(--app-height, 100dvh); z-index: 90; background: var(--bg); display: flex; flex-direction: column; animation: fade .2s ease; }
+.journal-fs { position: fixed; inset: 0; height: 100vh; height: 100dvh; z-index: 90; background: var(--bg); display: flex; flex-direction: column; animation: fade .2s ease; }
 .jfs-top { display: flex; align-items: center; gap: 10px; padding: max(14px, env(safe-area-inset-top)) 16px 8px; flex-shrink: 0; }
 .jfs-book-picker { flex: 1; min-width: 0; display: flex; justify-content: center; }
 .jfs-book-picker select {
@@ -558,8 +556,8 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 
 .mood-row button.on { background: var(--ochre); transform: scale(1.12); }
 
 /* ---------- session summary ---------- */
-.summary { position: fixed; inset: 0; height: 100vh; height: 100dvh; height: var(--app-height, 100dvh); z-index: 110; background: var(--bg); overflow-y: auto; overscroll-behavior-y: none; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; }
-.summary .aurora { display: none; }
+.summary { position: fixed; inset: 0; height: 100vh; height: 100dvh; z-index: 110; background: var(--bg); overflow-y: auto; overscroll-behavior-y: none; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; }
+.summary .aurora { position: absolute; inset: 0; pointer-events: none; background: var(--tint); }
 .summary .sum-inner { position: relative; z-index: 1; max-width: 560px; width: 100%; margin: 0 auto; padding: 40px 24px; flex: 1; display: flex; flex-direction: column; justify-content: center; text-align: center; }
 .summary .big { font-family: var(--font-d); font-size: 88px; font-weight: 200; line-height: 1; color: var(--ochre); }
 .summary .biglabel { letter-spacing: .18em; text-transform: uppercase; font-size: 12px; color: var(--ink-2); margin-top: 6px; }
@@ -574,7 +572,7 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 
 /* ================================================================
    MONTHLY WRAP — full-screen swipeable story viewer
 ================================================================ */
-.wrap-viewer { position: fixed; inset: 0; height: 100vh; height: 100dvh; height: var(--app-height, 100dvh); z-index: 120; background: var(--bg); display: flex; flex-direction: column; }
+.wrap-viewer { position: fixed; inset: 0; height: 100vh; height: 100dvh; z-index: 120; background: var(--bg); display: flex; flex-direction: column; }
 .wrap-progress { display: flex; gap: 5px; padding: max(14px, env(safe-area-inset-top)) 16px 0; }
 .wrap-progress i { flex: 1; height: 3px; border-radius: 99px; background: var(--line); }
 .wrap-progress i.done { background: var(--ochre); }
