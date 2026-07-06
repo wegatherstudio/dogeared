@@ -18,7 +18,7 @@
 ================================================================ */
 "use strict";
 
-const CLOUD_ENABLED = typeof FIREBASE_CONFIG !== "undefined" && FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY";
+const CLOUD_ENABLED = typeof FIREBASE_CONFIG !== "undefined" && FIREBASE_CONFIG.apiKey !== "AIzaSyAq7tkBLTz0yWNt06VmlulR9MPl9QH2AY8";
 const LAST_PUSH_KEY = "dogeared.lastCloudPush";
 
 let cloudUser = null;       // Firebase user object, or null when signed out
