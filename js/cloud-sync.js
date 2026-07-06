@@ -6,26 +6,39 @@
    as it always has — local-only, no account required.
 
    Sync model: simple "last write wins" across devices. Every local
-   save is pushed to Firestore (debounced) with a server timestamp; on
-   sign-in or app boot, if the cloud copy is newer than what this
-   device last pushed, it's pulled down and replaces local state. This
-   is NOT true multi-device conflict merging — if you edit the same
-   account on two devices at the same time while both are offline,
-   whichever reconnects and syncs last will overwrite the other. For
-   the realistic case (one person, one device at a time, switching
-   occasionally) this is the right amount of complexity; anything
-   fancier would need real operational-transform merging.
+   save is pushed to Firestore (debounced) with a server timestamp.
+   The "which copy do you want?" question is only ever asked ONCE per
+   device — the first time it's linked to a given Google account. After
+   that, this device is remembered as "known" for that account, and
+   every reopen (or return to the tab) just silently pulls the cloud
+   copy if it's newer than what this device already has, or pushes if
+   this device has newer local changes. This is NOT true multi-device
+   conflict merging — if you edit the same account on two devices at
+   the same time while both are offline, whichever reconnects and syncs
+   last will overwrite the other. For the realistic case (one person,
+   switching between a couple of devices, not editing simultaneously)
+   this is the right amount of complexity; anything fancier would need
+   real operational-transform merging.
 ================================================================ */
 "use strict";
 
 const CLOUD_ENABLED = typeof FIREBASE_CONFIG !== "undefined" && FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY";
 const LAST_PUSH_KEY = "dogeared.lastCloudPush";
+const LAST_PULL_KEY = "dogeared.lastCloudPull";
+const KNOWN_UID_KEY = "dogeared.knownSyncUid";
 
 let cloudUser = null;       // Firebase user object, or null when signed out
 let cloudStatus = "idle";   // 'idle' | 'syncing' | 'synced' | 'offline' | 'error'
 let fbApp = null, fbAuth = null, fbDb = null;
 let _pushTimer = null;
 let saveStateLocalOnly = null; // set below, once we've wrapped the real saveState
+let lastSyncError = null;      // {code, message} — shown in the Account card so you don't need DevTools
+
+function isKnownDevice(uid) { return localStorage.getItem(KNOWN_UID_KEY) === uid; }
+function markKnownDevice(uid) { localStorage.setItem(KNOWN_UID_KEY, uid); }
+function lastLocalSyncTs() {
+  return Math.max(Number(localStorage.getItem(LAST_PUSH_KEY) || 0), Number(localStorage.getItem(LAST_PULL_KEY) || 0));
+}
 
 function initCloud() {
   if (!CLOUD_ENABLED) return;
@@ -47,6 +60,12 @@ function initCloud() {
     if (!user) { cloudStatus = "idle"; refreshAccountUI(); return; }
     if (!S.profile) return; // mid-onboarding — the onboarding flow itself decides what happens next
     onSignedIn(user);
+  });
+
+  // catch up on changes made from another device while this one was open —
+  // checked whenever you switch back to this tab, not just on a fresh load
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && cloudUser) silentSyncCheck(cloudUser);
   });
 }
 
@@ -95,8 +114,6 @@ function signOutCloud() {
   });
 }
 
-let lastSyncError = null; // {code, message} — shown in the Account card so you don't need DevTools
-
 function firestoreErrorMessage(e) {
   const code = e?.code || "";
   console.error("Firestore error:", code, e?.message);
@@ -108,8 +125,9 @@ function firestoreErrorMessage(e) {
   return `Sync failed (${code || e?.message || "unknown error"}) — check the browser console for the full error.`;
 }
 
-/* ---------------- sign-in → merge decision ---------------- */
+/* ---------------- sign-in → merge decision (first time this device meets this account) ---------------- */
 async function onSignedIn(user) {
+  if (isKnownDevice(user.uid)) { await silentSyncCheck(user); return; }
   cloudStatus = "syncing"; refreshAccountUI();
   try {
     const doc = await fbDb.collection("users").doc(user.uid).get();
@@ -118,7 +136,8 @@ async function onSignedIn(user) {
     const cloudHasProfile = !!(cloudData && cloudData.profile);
 
     if (cloudHasProfile && localHasProfile) {
-      // Both sides have real data — this is the one moment we ask, rather than guessing.
+      // Both sides have real data — this is the one moment we ever ask, rather than guessing.
+      // Only happens the first time THIS device links to THIS account.
       showSyncConflictSheet(user, cloudData);
     } else if (cloudHasProfile && !localHasProfile) {
       applyCloudData(cloudData);
@@ -127,6 +146,7 @@ async function onSignedIn(user) {
       await pushCloudData(true);
       toast("Synced to your Google account.");
     }
+    markKnownDevice(user.uid);
     cloudStatus = "synced"; lastSyncError = null;
   } catch (e) {
     const msg = firestoreErrorMessage(e);
@@ -137,11 +157,39 @@ async function onSignedIn(user) {
   refreshAccountUI();
 }
 
+/* ---------------- routine sync (device already linked to this account) ----------------
+   No prompts, no drama — just: is the cloud copy meaningfully newer than
+   what this device already has? If so, pull it. If this device has newer
+   unsynced local changes, push. Runs on every app open and every time you
+   switch back to this tab while signed in. */
+async function silentSyncCheck(user) {
+  if (!fbDb) return;
+  cloudStatus = "syncing"; refreshAccountUI();
+  try {
+    const doc = await fbDb.collection("users").doc(user.uid).get();
+    if (!doc.exists) { await pushCloudData(true); markKnownDevice(user.uid); cloudStatus = "synced"; refreshAccountUI(); return; }
+    const cloudData = doc.data();
+    const cloudTs = cloudData.updatedAtClient || 0;
+    const localTs = lastLocalSyncTs();
+    if (cloudTs > localTs + 1500) { // small slack for clock/network jitter
+      applyCloudData(cloudData);
+      localStorage.setItem(LAST_PULL_KEY, String(Date.now()));
+      toast("Synced the latest from your other device.");
+    }
+    cloudStatus = "synced"; lastSyncError = null;
+  } catch (e) {
+    const msg = firestoreErrorMessage(e);
+    lastSyncError = { code: e?.code, message: msg };
+    cloudStatus = navigator.onLine ? "error" : "offline";
+  }
+  refreshAccountUI();
+}
+
 function showSyncConflictSheet(user, cloudData) {
   const cloudWhen = cloudData.updatedAtClient ? new Date(cloudData.updatedAtClient).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "an earlier session";
   openSheet(`
     <h2 style="text-align:center;margin-bottom:6px">Two shelves, one account</h2>
-    <p class="muted" style="text-align:center">This Google account already has reading data saved online (last updated ${esc(cloudWhen)}), and this device has its own too. Which one should we keep?</p>
+    <p class="muted" style="text-align:center">This Google account already has reading data saved online (last updated ${esc(cloudWhen)}), and this device has its own too. Which one should we keep? This is the only time we'll ask — from now on, this device stays quietly in sync.</p>
     <div class="btn-row" style="justify-content:center;flex-direction:column;align-items:stretch;gap:10px">
       <button class="btn solid" id="sync-use-cloud">Use my cloud data (replaces this device)</button>
       <button class="btn ghost" id="sync-use-local">Keep this device's data (replaces the cloud copy)</button>
@@ -149,11 +197,13 @@ function showSyncConflictSheet(user, cloudData) {
   `, (sheet) => {
     $("#sync-use-cloud", sheet).addEventListener("click", () => {
       applyCloudData(cloudData);
+      markKnownDevice(user.uid);
       closeSheet();
       toast("Cloud data restored to this device.");
     });
     $("#sync-use-local", sheet).addEventListener("click", async () => {
       await pushCloudData(true);
+      markKnownDevice(user.uid);
       closeSheet();
       toast("This device's data is now your cloud copy.");
     });
@@ -165,6 +215,7 @@ function applyCloudData(cloudData) {
   delete incoming.updatedAt; delete incoming.updatedAtClient; delete incoming.uid;
   S = Object.assign(defaultState(), incoming);
   saveStateLocalOnly();
+  localStorage.setItem(LAST_PULL_KEY, String(Date.now()));
   applyTheme();
   render();
 }
