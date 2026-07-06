@@ -1478,6 +1478,27 @@ function finishBookFlow(b) {
 ================================================================ */
 const fmtDateForCard = (d = new Date()) => d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 
+/* Deterministic filenames — saving twice reuses the same name instead of
+   piling up "image (1).png", "image (2).png", etc. */
+function monthlyWrapFilename(ms) {
+  const slug = ms.label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  return `dogeared-monthly-wrapped-${slug}.jpg`;
+}
+function timestampSlug() {
+  const d = new Date();
+  const yy = String(d.getFullYear()).slice(2);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `${yy}${mm}${dd}-${hh}${mi}${ss}`;
+}
+function statsFilename(kind, ext) {
+  const label = { book: "book", session: "session", weekstats: "my-week", wrap: "my-reading-life", history: "reshare" }[kind] || "stats";
+  return `dogeared-stats-${label}-${timestampSlug()}.${ext}`;
+}
+
 function resolveCardData(cfg) {
   const g = globalStats();
   if (cfg.kind === "history") return cfg.data;
@@ -1619,7 +1640,7 @@ function openShareCard(cfg) {
       shelfBooks: cardData.shelfBooks, stats: cardData.stats, profileName: S.profile.name,
     });
   };
-  const filenameFor = (s) => s === "theme" ? "dogeared-card-cover-theme.png" : s === "transparent" ? "dogeared-card-transparent.png" : "dogeared-card-classic.png";
+  const filenameFor = () => statsFilename(cfg.kind === "history" ? (cfg.data?.kind || "history") : cfg.kind, "png");
 
   openSheet(`
     <h2 style="text-align:center;margin-bottom:4px">Share it beautifully</h2>
@@ -1645,7 +1666,7 @@ function openShareCard(cfg) {
       canvas.toBlob((blob) => {
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
-        a.download = filenameFor(style);
+        a.download = filenameFor();
         a.click();
         setTimeout(() => URL.revokeObjectURL(a.href), 3000);
       }, "image/png");
@@ -1661,11 +1682,12 @@ function openShareCard(cfg) {
   });
 }
 
-/* Captures just the .wrap-body content (no progress bar, no close button,
-   no prev/next controls) and downloads it as a JPG — pixel-for-pixel what
-   the user sees on that slide. */
-async function saveWrapSlideAsImage(viewerEl, variant, btn) {
-  const target = $(".wrap-body", viewerEl);
+/* Captures the whole "Monthly Wrapped" region — header, slide content, and
+   the small bottom brand line — but not the progress bar, close button, or
+   prev/next controls. Every slide of the same month shares one filename,
+   so re-saving doesn't pile up a dozen differently-named downloads. */
+async function saveWrapSlideAsImage(viewerEl, ms, btn) {
+  const target = $("#wrap-capture", viewerEl);
   if (!target || typeof html2canvas === "undefined") { toast("Couldn't save the image — try again."); return; }
   const original = btn.innerHTML;
   btn.disabled = true;
@@ -1682,7 +1704,7 @@ async function saveWrapSlideAsImage(viewerEl, variant, btn) {
       if (!blob) { toast("Couldn't save the image — try again."); return; }
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `dogeared-wrap-${variant || "slide"}.jpg`;
+      a.download = monthlyWrapFilename(ms);
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 3000);
       toast("Saved.");
@@ -1794,6 +1816,7 @@ function openMonthlyWrap(ym) {
   }
 
   const slideVariants = [null, "stats", "collage", "quote", "compare", "recap", null, null];
+  const GOAL_IDX = slides.length - 2; // "Looking ahead" is always second-to-last
 
   const el = document.createElement("div");
   el.className = "wrap-viewer";
@@ -1802,19 +1825,22 @@ function openMonthlyWrap(ym) {
   const draw = () => {
     const variant = slideVariants[idx];
     const isLast = idx === slides.length - 1;
+    const navLocked = idx === GOAL_IDX; // let the goal slider be dragged without triggering slide changes
     el.innerHTML = `
       <div class="wrap-progress">${slides.map((_, i) => `<i class="${i < idx ? "done" : i === idx ? "now" : ""}"></i>`).join("")}</div>
-      <div class="wrap-header">
-        <div class="wrap-header-kicker">Monthly Wrapped</div>
-        <div class="wrap-header-month">${esc(ms.label)}</div>
-      </div>
       <button class="close-x wrap-close">${icon("x", { size: 16 })}</button>
-      <div class="wrap-body">${slides[idx]}</div>
-      <div class="wrap-nav">
+      <div class="wrap-capture" id="wrap-capture">
+        <div class="wrap-header">
+          <div class="wrap-header-kicker">Monthly Wrapped</div>
+          <div class="wrap-header-month">${esc(ms.label)}</div>
+        </div>
+        <div class="wrap-body">${slides[idx]}</div>
+        <div class="wrap-brand"><img src="icons/logo.png" alt="" style="width:18px;height:18px;object-fit:contain"><span>Dogeared</span></div>
+      </div>
+      ${navLocked ? "" : `<div class="wrap-nav">
         <button class="tap-zone left" aria-label="Previous"></button>
         <button class="tap-zone right" aria-label="Next"></button>
-      </div>
-      <div class="wrap-brand"><img src="icons/logo.png" alt="" style="width:18px;height:18px;object-fit:contain"><span>Dogeared</span></div>
+      </div>`}
       <div class="wrap-foot">
         ${isLast ? "<span></span>" : variant ? `<button class="btn ghost sm" id="wr-save">${icon("download", { size: 14 })} Save</button>` : "<span></span>"}
         <div class="btn-row" style="margin:0">
@@ -1829,7 +1855,7 @@ function openMonthlyWrap(ym) {
     $("#wr-prev", el)?.addEventListener("click", () => go(-1));
     $("#wr-next", el)?.addEventListener("click", () => go(1));
     $("#wr-done", el)?.addEventListener("click", () => finish());
-    $("#wr-save", el)?.addEventListener("click", (e) => saveWrapSlideAsImage(el, variant, e.currentTarget));
+    $("#wr-save", el)?.addEventListener("click", (e) => saveWrapSlideAsImage(el, ms, e.currentTarget));
     $("#wg-range", el)?.addEventListener("input", (e) => {
       newGoal = +e.target.value;
       $("#wg-n", el).textContent = newGoal;
@@ -1844,11 +1870,11 @@ function openMonthlyWrap(ym) {
   const go = (d) => { idx = Math.max(0, Math.min(slides.length - 1, idx + d)); draw(); };
   const finish = () => { markWrapViewed(ym); el.remove(); render(); };
 
-  // swipe support
+  // swipe support (disabled on the goal slide, same reason as the tap zones)
   let sx = null;
   el.addEventListener("touchstart", (e) => { sx = e.touches[0].clientX; }, { passive: true });
   el.addEventListener("touchend", (e) => {
-    if (sx === null) return;
+    if (sx === null || idx === GOAL_IDX) { sx = null; return; }
     const dx = e.changedTouches[0].clientX - sx;
     if (Math.abs(dx) > 50) go(dx < 0 ? 1 : -1);
     sx = null;

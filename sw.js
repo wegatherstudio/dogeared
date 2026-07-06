@@ -1,13 +1,13 @@
 /* Dogeared service worker — offline app shell caching */
-const CACHE = "dogeared-v10";
+const CACHE = "dogeared-v11";
 const CORE_SHELL = [
   "./", "./index.html", "./manifest.webmanifest",
   "./css/styles.css",
   "./js/icons.js", "./js/catalog.js", "./js/store.js", "./js/api.js", "./js/app.js",
   "./icons/logo.png", "./icons/icon-192.png", "./icons/icon-512.png",
   "./icons/favicon.png", "./icons/apple-touch-icon.png",
-  "./icons/avatar-classic.png", "./icons/avatar-mustard.png", "./icons/avatar-ochre.png",
-  "./icons/avatar-ember.png", "./icons/avatar-teal.png"
+  "./icons/avatar-night-owl.png", "./icons/avatar-bookworm.png", "./icons/avatar-speed-reader.png",
+  "./icons/avatar-romantic.png", "./icons/avatar-detective.png", "./icons/avatar-dreamer.png"
 ];
 const OPTIONAL_SHELL = [
   "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"

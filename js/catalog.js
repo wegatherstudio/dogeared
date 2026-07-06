@@ -135,13 +135,14 @@ const ACHIEVEMENTS = [
   { id:"collector",     ic:"book_open",  t:"The Collector",     d:"20 books in your library",       test:(s)=>s.books.length>=20 },
 ];
 
-/* ---------------- profile avatars (same art as the logo, recolored) ---------------- */
+/* ---------------- profile avatars — minimal line-art reading archetypes ---------------- */
 const AVATAR_PRESETS = [
-  { id: "classic", label: "Classic", file: "icons/avatar-classic.png" },
-  { id: "mustard", label: "Mustard", file: "icons/avatar-mustard.png" },
-  { id: "ochre",   label: "Ochre",   file: "icons/avatar-ochre.png" },
-  { id: "ember",   label: "Ember",   file: "icons/avatar-ember.png" },
-  { id: "teal",    label: "Teal",    file: "icons/avatar-teal.png" },
+  { id: "night-owl",    label: "Night Owl",     file: "icons/avatar-night-owl.png" },
+  { id: "bookworm",     label: "The Bookworm",  file: "icons/avatar-bookworm.png" },
+  { id: "speed-reader", label: "Speed Reader",  file: "icons/avatar-speed-reader.png" },
+  { id: "romantic",     label: "The Romantic",  file: "icons/avatar-romantic.png" },
+  { id: "detective",    label: "The Detective", file: "icons/avatar-detective.png" },
+  { id: "dreamer",      label: "The Dreamer",   file: "icons/avatar-dreamer.png" },
 ];
 const SESSION_MOODS = [
   ["😌","calm"],["🤯","mind-blown"],["🥹","moved"],["😱","gripped"],["😴","sleepy"],["🤔","thoughtful"]
