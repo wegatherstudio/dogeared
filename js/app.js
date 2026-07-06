@@ -9,11 +9,20 @@ const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
 const root = $("#app");
 const feedRoot = $("#feed-root");
 
+const systemDarkQuery = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+function resolvedTheme() {
+  if (S.settings.theme === "auto") return systemDarkQuery?.matches ? "dark" : "light";
+  return S.settings.theme;
+}
 function applyTheme() {
-  document.documentElement.dataset.theme = S.settings.theme;
-  $('meta[name="theme-color"]')?.setAttribute("content", S.settings.theme === "dark" ? "#16130E" : "#F3EFE1");
+  const t = resolvedTheme();
+  document.documentElement.dataset.theme = t;
+  $('meta[name="theme-color"]')?.setAttribute("content", t === "dark" ? "#16130E" : "#F3EFE1");
 }
 applyTheme();
+systemDarkQuery?.addEventListener?.("change", () => {
+  if (S.settings.theme === "auto") { applyTheme(); render(); }
+});
 
 const logoChip = (px, imgSize) =>
   `<span class="logo-chip" style="padding:${px}px"><img src="icons/logo.png" alt="" style="width:${imgSize}px;display:block"></span>`;
@@ -48,6 +57,10 @@ function runOnboarding() {
         ${logoChip(22, 96)}
         <div class="word">Dogeared</div>
         <div class="tag">Build a reading life.</div>
+        <div class="ob-theme-pick">
+          <button data-obtheme="light" class="${resolvedTheme() === "light" ? "on" : ""}">${icon("sun", { size: 15 })} Light</button>
+          <button data-obtheme="dark" class="${resolvedTheme() === "dark" ? "on" : ""}">${icon("moon", { size: 15 })} Dark</button>
+        </div>
       </div>`;
       foot = `<span></span><button class="btn solid" data-next>Let's begin</button>`;
     }
@@ -106,6 +119,10 @@ function runOnboarding() {
 
     ob.innerHTML = `<div class="aurora"></div><div class="ob-inner">${prog}${body}<div class="ob-foot">${foot}</div></div>`;
 
+    $$("[data-obtheme]", ob).forEach((b) => b.addEventListener("click", () => {
+      S.settings.theme = b.dataset.obtheme;
+      saveState(); applyTheme(); draw();
+    }));
     $$("[data-g]", ob).forEach((b) => b.addEventListener("click", () => {
       const id = b.dataset.g;
       picks.genres = picks.genres.includes(id) ? picks.genres.filter((x) => x !== id) : [...picks.genres, id];
@@ -218,13 +235,14 @@ function renderHome() {
   root.innerHTML = `
     ${topbar(`<button class="iconbtn" data-open-search title="Search books">${icon("search", { size: 18 })}</button>`)}
     <div class="view">
-      ${wrapYm ? `<div class="card eared wrap-banner rise" data-open-wrap="${wrapYm}">
-        <div class="wrap-banner-ic">${icon("calendar", { size: 22 })}</div>
-        <div style="flex:1">
-          <div class="eyebrow" style="margin-bottom:2px">Your wrap is ready</div>
-          <div class="serif" style="font-size:17px">${monthLabel(wrapYm)}, recapped</div>
+      ${wrapYm ? `<div class="wrap-banner" data-open-wrap="${wrapYm}">
+        <div class="wrap-banner-shine"></div>
+        <div class="wrap-banner-ic">${icon("sparkle", { size: 22 })}</div>
+        <div style="flex:1;position:relative;z-index:1">
+          <div class="wrap-banner-eyebrow">Your wrap is ready</div>
+          <div class="wrap-banner-title">${monthLabel(wrapYm)}, recapped</div>
         </div>
-        <span class="chip gold">View</span>
+        <span class="wrap-banner-cta">View ${icon("chev_r", { size: 13 })}</span>
       </div>` : ""}
 
       <div class="hello rise"><div class="hi">${greet}</div><h1>${esc(S.profile.name)}</h1></div>
@@ -1134,9 +1152,35 @@ function startTimer(bookId) {
   if (!ex) {
     setTimer({ bookId, last: Date.now(), acc: 0, paused: false, mood: null, notified60: false });
     maybeAskNotificationPermission();
-    updateSessionNotification();
+    showSessionStartPopup(bookId);
     updateCtaState();
   }
+}
+
+/* a brief, in-app animated confirmation — not an OS notification, since the
+   app is obviously open right now. Shows a live-ticking clock for a few
+   seconds, then fades. The persistent OS notification only appears once
+   the app is actually minimized (see the visibilitychange handler below). */
+function showSessionStartPopup(bookId) {
+  const book = S.books.find((b) => b.id === bookId);
+  const el = document.createElement("div");
+  el.className = "session-start-popup";
+  el.innerHTML = `
+    <div class="ssp-clock">0:00</div>
+    <div class="ssp-label">${book ? esc(book.t) : "Session"} started</div>
+  `;
+  document.body.appendChild(el);
+  const clockEl = $(".ssp-clock", el);
+  const startedAt = Date.now();
+  const tick = setInterval(() => {
+    const s = Math.floor((Date.now() - startedAt) / 1000);
+    clockEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  }, 1000);
+  setTimeout(() => {
+    clearInterval(tick);
+    el.classList.add("out");
+    setTimeout(() => el.remove(), 400);
+  }, 3200);
 }
 
 /* ---------------- notifications: permission, persistent session control,
@@ -1172,8 +1216,9 @@ function maybeAskNotificationPermission() {
 }
 function canNotify() { return notifSupported() && Notification.permission === "granted"; }
 
-async function updateSessionNotification() {
+async function updateSessionNotification(force = false) {
   if (!canNotify()) return;
+  if (!force && document.visibilityState === "visible") return; // app is clearly open — no need to notify
   const t = getTimer();
   if (!t) return;
   const book = S.books.find((b) => b.id === t.bookId);
@@ -1256,6 +1301,18 @@ function startHeartbeat() {
     }
   }, 60000);
 }
+
+/* the app being minimized/backgrounded is the actual trigger for the
+   persistent notification — not the moment the session starts. Coming
+   back to the app clears it, since there's no need to nag someone who's
+   already looking at the timer. */
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    if (getTimer()) updateSessionNotification(true);
+  } else {
+    clearSessionNotifications();
+  }
+});
 
 /* handle taps on notification actions, whether the app was already open
    (message from the service worker) or just cold-launched (URL param) */
@@ -1480,9 +1537,17 @@ const fmtDateForCard = (d = new Date()) => d.toLocaleDateString(undefined, { mon
 
 /* Deterministic filenames — saving twice reuses the same name instead of
    piling up "image (1).png", "image (2).png", etc. */
-function monthlyWrapFilename(ms) {
-  const slug = ms.label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-  return `dogeared-monthly-wrapped-${slug}.jpg`;
+const WRAP_SLIDE_SLUGS = {
+  stats: "the-months-in-numbers",
+  collage: "books-you-lived-in",
+  quote: "standout-line",
+  compare: "compared-to-last-month",
+  recap: "well-read",
+};
+function monthlyWrapFilename(ms, variant) {
+  const monthSlug = ms.label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  const slideSlug = WRAP_SLIDE_SLUGS[variant] || "recap";
+  return `dogeared-monthly-wrapped-${monthSlug}-${slideSlug}.jpg`;
 }
 function timestampSlug() {
   const d = new Date();
@@ -1598,6 +1663,7 @@ function resolveCardData(cfg) {
       title: `${pagesThisWeek()} pages this week`,
       subtitle: sessionsThisWeek() ? `across ${sessionsThisWeek()} session${sessionsThisWeek() === 1 ? "" : "s"}` : "a quieter week — that's alright",
       coverUrl: null, book: null, shelfBooks: booksForShelf(12),
+      badges: ACHIEVEMENTS.filter((a) => S.unlocked[a.id]).map((a) => a.ic),
       stats: [
         [pagesThisWeek(), "pages this week"],
         [fmtHM(minutesThisWeek()), "time this week"],
@@ -1637,7 +1703,7 @@ function openShareCard(cfg) {
       kicker: cardData.kicker, dateStr: cardData.dateStr,
       title: cardData.title, subtitle: cardData.subtitle,
       coverUrl: cardData.coverUrl, book: cardData.book, stars: cardData.stars,
-      shelfBooks: cardData.shelfBooks, stats: cardData.stats, profileName: S.profile.name,
+      shelfBooks: cardData.shelfBooks, stats: cardData.stats, badges: cardData.badges, profileName: S.profile.name,
     });
   };
   const filenameFor = () => statsFilename(cfg.kind === "history" ? (cfg.data?.kind || "history") : cfg.kind, "png");
@@ -1684,9 +1750,11 @@ function openShareCard(cfg) {
 
 /* Captures the whole "Monthly Wrapped" region — header, slide content, and
    the small bottom brand line — but not the progress bar, close button, or
-   prev/next controls. Every slide of the same month shares one filename,
-   so re-saving doesn't pile up a dozen differently-named downloads. */
-async function saveWrapSlideAsImage(viewerEl, ms, btn) {
+   prev/next controls — then composites it into a fixed 1080×1920 (9:16)
+   frame, cover-fit, so it fills an Instagram Story regardless of the
+   device's actual screen proportions. Each slide gets its own descriptive
+   filename, so re-saving the same slide doesn't create endless copies. */
+async function saveWrapSlideAsImage(viewerEl, ms, variant, btn) {
   const target = $("#wrap-capture", viewerEl);
   if (!target || typeof html2canvas === "undefined") { toast("Couldn't save the image — try again."); return; }
   const original = btn.innerHTML;
@@ -1694,17 +1762,26 @@ async function saveWrapSlideAsImage(viewerEl, ms, btn) {
   btn.innerHTML = "Saving…";
   try {
     const bg = getComputedStyle(viewerEl).backgroundColor || "#16130E";
-    const canvas = await html2canvas(target, {
+    const captured = await html2canvas(target, {
       backgroundColor: bg,
       scale: Math.min(3, window.devicePixelRatio || 2),
       useCORS: true,
       logging: false,
     });
-    canvas.toBlob((blob) => {
+    const OUT_W = 1080, OUT_H = 1920;
+    const out = document.createElement("canvas");
+    out.width = OUT_W; out.height = OUT_H;
+    const octx = out.getContext("2d");
+    octx.fillStyle = bg; octx.fillRect(0, 0, OUT_W, OUT_H);
+    const scale = Math.max(OUT_W / captured.width, OUT_H / captured.height);
+    const sw = captured.width * scale, sh = captured.height * scale;
+    octx.drawImage(captured, (OUT_W - sw) / 2, (OUT_H - sh) / 2, sw, sh);
+
+    out.toBlob((blob) => {
       if (!blob) { toast("Couldn't save the image — try again."); return; }
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = monthlyWrapFilename(ms);
+      a.download = monthlyWrapFilename(ms, variant);
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 3000);
       toast("Saved.");
@@ -1855,7 +1932,7 @@ function openMonthlyWrap(ym) {
     $("#wr-prev", el)?.addEventListener("click", () => go(-1));
     $("#wr-next", el)?.addEventListener("click", () => go(1));
     $("#wr-done", el)?.addEventListener("click", () => finish());
-    $("#wr-save", el)?.addEventListener("click", (e) => saveWrapSlideAsImage(el, ms, e.currentTarget));
+    $("#wr-save", el)?.addEventListener("click", (e) => saveWrapSlideAsImage(el, ms, variant, e.currentTarget));
     $("#wg-range", el)?.addEventListener("input", (e) => {
       newGoal = +e.target.value;
       $("#wg-n", el).textContent = newGoal;
@@ -1946,6 +2023,7 @@ function renderProfile() {
         <div class="theme-toggle">
           <button data-theme="light" class="${S.settings.theme === "light" ? "active" : ""}">${icon("sun", { size: 16 })} Light</button>
           <button data-theme="dark" class="${S.settings.theme === "dark" ? "active" : ""}">${icon("moon", { size: 16 })} Dark</button>
+          <button data-theme="auto" class="${S.settings.theme === "auto" ? "active" : ""}">${icon("refresh", { size: 15 })} Auto</button>
         </div>
       </div>
 
@@ -2119,6 +2197,46 @@ document.addEventListener("cover", () => {
 });
 
 /* ================================================================
+   BACK BUTTON — closes a popup first, then goes Home, then confirms
+   before actually leaving. Uses history.pushState as a "guard" so the
+   hardware/gesture back button can be intercepted in stages.
+================================================================ */
+function pushBackGuard() {
+  try { history.pushState({ dogeared: true }, ""); } catch {}
+}
+function closeTopmostOverlay() {
+  const tryClick = (sel) => { const el = document.querySelector(sel); if (el) { el.click(); return true; } return false; };
+  if (tryClick(".sheet-backdrop .close-x")) return true;
+  if (tryClick(".journal-fs #jfs-close")) return true;
+  if (tryClick(".wrap-viewer .wrap-close")) return true;
+  if (tryClick(".summary #sum-done")) return true;
+  return false;
+}
+function showQuitConfirm() {
+  openSheet(`
+    <h2 style="text-align:center;margin-bottom:6px">Closing the book for now?</h2>
+    <p class="muted" style="text-align:center">Your shelf will be exactly as you left it — nothing here needs finishing before you go.</p>
+    <div class="btn-row" style="justify-content:center">
+      <button class="btn ghost" id="quit-stay">Stay a while</button>
+      <button class="btn solid" id="quit-yes" style="background:var(--ember)">Quit</button>
+    </div>
+  `, (sheet) => {
+    $("#quit-stay", sheet).addEventListener("click", () => { closeSheet(); pushBackGuard(); });
+    $("#quit-yes", sheet).addEventListener("click", () => {
+      closeSheet();
+      try { window.close(); } catch {} // best-effort; browsers largely restrict this for non-script-opened tabs
+    });
+  });
+  pushBackGuard(); // so back-while-confirming just dismisses the confirm itself
+}
+window.addEventListener("popstate", () => {
+  if (!S.profile) return; // onboarding has its own step-back button; nothing to guard yet
+  if (closeTopmostOverlay()) { pushBackGuard(); return; }
+  if (currentView !== "home") { navigate("home"); pushBackGuard(); return; }
+  showQuitConfirm();
+});
+
+/* ================================================================
    BOOT
 ================================================================ */
 function boot() {
@@ -2127,6 +2245,7 @@ function boot() {
   if (getTimer()) navigate("timer");
   else navigate("home");
   startHeartbeat();
+  pushBackGuard();
 }
 
 if (!S.profile) {

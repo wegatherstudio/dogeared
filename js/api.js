@@ -116,8 +116,10 @@ function drawShareCard(canvas, opts) {
   const visualH = hasShelf ? SHELF_H + 34 : hasCover ? COVER_H : 0;
   const gapToTitle = visualH ? 86 : 0;
 
+  const badgeCount = Math.min((opts.badges || []).length, 12);
+  const badgeRowH = badgeCount ? 96 : 0;
   const contentHeight = visualH + gapToTitle + titleLines.length * titleLH
-    + (opts.subtitle ? 56 : 0) + (opts.stars ? 78 : 0) + 356;
+    + (opts.subtitle ? 56 : 0) + (opts.stars ? 78 : 0) + 356 + badgeRowH;
   const startY = TOP_ZONE_BOTTOM + Math.max(0, (BOTTOM_ZONE_TOP - TOP_ZONE_BOTTOM - contentHeight) / 2);
 
   /* the book-details + stats block, flowing down from a given title Y */
@@ -164,6 +166,32 @@ function drawShareCard(canvas, opts) {
       ctx.font = "400 22px Outfit, Arial, sans-serif";
       ctx.fillText(String(l).toUpperCase(), x, gy_ + 36);
     });
+
+    // achievement badges — small icon row, auto-sized to fit whatever's unlocked
+    if (badgeCount) {
+      const badgeTop = gy[1] + 66;
+      const maxRowW = W - 200;
+      const size = Math.max(30, Math.min(46, Math.floor((maxRowW - (badgeCount - 1) * 14) / badgeCount)));
+      const gap = 14;
+      const rowW = badgeCount * size + (badgeCount - 1) * gap;
+      let bx = W / 2 - rowW / 2;
+      const icons = (opts.badges || []).slice(0, badgeCount);
+      icons.forEach((iconName) => {
+        const d = (typeof ICON_PATHS !== "undefined" && ICON_PATHS[iconName]) || null;
+        if (d) {
+          ctx.save();
+          ctx.translate(bx, badgeTop);
+          ctx.scale(size / 24, size / 24);
+          try {
+            const p = new Path2D(d);
+            ctx.strokeStyle = SUB; ctx.lineWidth = 1.6; ctx.lineJoin = "round"; ctx.lineCap = "round";
+            ctx.stroke(p);
+          } catch {}
+          ctx.restore();
+        }
+        bx += size + gap;
+      });
+    }
 
     // footer — always fixed at the bottom, independent of content length
     ctx.strokeStyle = SUB;
