@@ -162,7 +162,14 @@ function navigate(v) {
   feedRoot.classList.toggle("hidden", v !== "discover");
   root.classList.toggle("hidden", v === "discover");
   render();
+  updateCtaState();
   if (v !== "discover") window.scrollTo({ top: 0 });
+}
+function updateCtaState() {
+  const cta = $(".tabbar .cta");
+  if (!cta) return;
+  const running = !!getTimer();
+  cta.classList.toggle("pulse", running && currentView !== "timer");
 }
 function render() {
   if (currentView === "home") renderHome();
@@ -277,7 +284,7 @@ function renderHome() {
                 <span class="chip gold">${icon(kd.ic, { size: 11 })} ${kd.label}</span>
                 <span class="muted small">${fmtDateNice(j.createdAt)}${b ? " · " + esc(b.t) : " · freeform"}</span>
               </div>
-              <p style="font-family:var(--font-d);font-size:15px;margin-top:6px;${j.kind === "quote" ? "font-style:italic" : ""}">${j.kind === "quote" ? "❝ " : ""}${esc(j.text.slice(0, 130))}${j.text.length > 130 ? "…" : ""}${j.kind === "quote" ? " ❞" : ""}</p>
+              <p style="font-family:var(--font-d);font-size:15px;margin-top:6px;${j.kind === "quote" ? "font-style:italic" : ""}">${j.kind === "quote" ? "❝ " : ""}${esc(entryPreviewText(j))}${j.kind === "quote" ? " ❞" : ""}</p>
               <div class="btn-row"><button class="btn quiet sm" data-home-jedit="${j.id}">Edit</button></div>
             </div>`;
           }).join("")
@@ -344,17 +351,31 @@ function renderDiscover() {
   $("[data-more]", feedRoot)?.addEventListener("click", (e) => appendMoreFeed(e.currentTarget));
 }
 
+function fitTitleSize(t) {
+  const len = (t || "").length;
+  if (len > 60) return 19;
+  if (len > 42) return 21;
+  if (len > 28) return 23;
+  return 25;
+}
+function fitAuthorSize(a) {
+  const len = (a || "").length;
+  if (len > 42) return 11.5;
+  if (len > 28) return 12.5;
+  return 13.5;
+}
 function feedCardHTML(cb) {
   const hue = GENRE_HUES[cb.g[0]] || "#6B5B3F";
   const gl = cb.g.map((g) => GENRES.find((x) => x.id === g)?.label).filter(Boolean);
+  const authorLine = `${cb.a || "Unknown author"}${cb.y ? " · " + cb.y : ""}`;
   return `<div class="feed-card" data-fc="${cb.id}">
     <div class="bgwash" style="background:${hue}"></div>
     <div class="bgcover"${cb.cover ? ` style="background-image:url(${cb.cover})"` : ""}></div>
     <div class="fc-inner">
       <div class="fc-content">
         ${cb.cover ? `<img class="cover xl fc-cover" src="${cb.cover}" alt="">` : genCoverHTML(cb, "cover xl fc-cover")}
-        <div class="fc-title">${esc(cb.t)}</div>
-        <div class="fc-author">${esc(cb.a || "Unknown author")}${cb.y ? " · " + cb.y : ""}</div>
+        <div class="fc-title" style="font-size:${fitTitleSize(cb.t)}px">${esc(cb.t)}</div>
+        <div class="fc-author" style="font-size:${fitAuthorSize(authorLine)}px">${esc(authorLine)}</div>
         <div class="fc-meta">
           ${cb.r ? `<span class="chip">★ ${cb.r}</span>` : ""}
           ${cb.p ? `<span class="chip">${cb.p} pages</span>` : ""}
@@ -365,7 +386,7 @@ function feedCardHTML(cb) {
       </div>
       <div class="fc-actions">
         <button class="btn main" data-fc-start="${cb.id}">Start reading</button>
-        <button class="btn" data-fc-save="${cb.id}">${icon("plus", { size: 14 })} Wishlist</button>
+        <button class="btn" data-fc-save="${cb.id}">${icon("plus", { size: 12 })} Wishlist</button>
         <button class="btn" data-fc-skip="${cb.id}">Skip</button>
       </div>
     </div>
@@ -639,17 +660,41 @@ function renderLibrary() {
 /* ================================================================
    JOURNAL — reflective writing, per-book & freeform
 ================================================================ */
+/* entry content helpers — support both the new rich-html entries and
+   legacy plain-text+images entries created before this editor existed */
+function entryBodyHTML(j) {
+  if (j.html) return j.html;
+  const t = j.kind === "quote" ? "❝ " + esc(j.text) + " ❞" : esc(j.text).replace(/\n/g, "<br>");
+  const imgs = j.images?.length ? `<div class="imgs">${j.images.map((src) => `<img src="${src}" alt="">`).join("")}</div>` : "";
+  return t + imgs;
+}
+function entryPreviewText(j, max = 130) {
+  let text;
+  if (j.html) {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = j.html;
+    text = tmp.textContent.trim() || (tmp.querySelector("img") ? "📷 A photo, kept without words." : "");
+  } else {
+    text = j.text || "";
+  }
+  return text.length > max ? text.slice(0, max).replace(/\s+\S*$/, "") + "…" : text;
+}
+
+let journalBookQuery = "";
 function renderJournal() {
   const entries = S.journal
     .filter((j) => {
-      if (journalFilter === "all") return true;
-      if (journalFilter === "free") return !j.bookId;
-      if (JOURNAL_KINDS.some((k) => k.id === journalFilter)) return j.kind === journalFilter;
-      return j.bookId === journalFilter;
+      if (journalFilter === "all") { /* pass */ }
+      else if (journalFilter === "free") { if (j.bookId) return false; }
+      else if (JOURNAL_KINDS.some((k) => k.id === journalFilter)) { if (j.kind !== journalFilter) return false; }
+      if (journalBookQuery) {
+        const b = j.bookId ? S.books.find((x) => x.id === j.bookId) : null;
+        const hay = (b ? b.t + " " + (b.a || "") : "freeform").toLowerCase();
+        if (!hay.includes(journalBookQuery.toLowerCase())) return false;
+      }
+      return true;
     })
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const booksWithEntries = [...new Set(S.journal.map((j) => j.bookId).filter(Boolean))]
-    .map((id) => S.books.find((b) => b.id === id)).filter(Boolean);
 
   root.innerHTML = `
     ${topbar(`<button class="iconbtn" data-back-home title="Back to Home">${icon("chev_l", { size: 18 })}</button>`)}
@@ -659,11 +704,13 @@ function renderJournal() {
         <button class="btn sm solid" id="j-new">${icon("plus", { size: 14 })} New entry</button>
       </div>
       <p class="muted" style="margin:-8px 0 14px">A private space for how books actually land — beyond the star rating.</p>
+      <div class="search-head" style="margin-bottom:10px">
+        <input id="j-search" placeholder="Find entries by book title or author…" value="${esc(journalBookQuery)}">
+      </div>
       <div class="seg">
         <button data-jf="all" class="${journalFilter === "all" ? "active" : ""}">All</button>
         <button data-jf="free" class="${journalFilter === "free" ? "active" : ""}">Freeform</button>
-        ${JOURNAL_KINDS.map((k) => `<button data-jf="${k.id}" class="${journalFilter === k.id ? "active" : ""}">${k.label}</button>`).join("")}
-        ${booksWithEntries.map((b) => `<button data-jf="${b.id}" class="${journalFilter === b.id ? "active" : ""}">${esc(b.t.slice(0, 16))}${b.t.length > 16 ? "…" : ""}</button>`).join("")}
+        ${JOURNAL_KINDS.map((k) => `<button data-jf="${k.id}" class="${journalFilter === k.id ? "active" : ""}">${icon(k.ic, { size: 13 })} ${k.label}</button>`).join("")}
       </div>
       ${entries.length
         ? entries.map((j) => {
@@ -675,16 +722,15 @@ function renderJournal() {
                 <span class="muted small">${fmtDateNice(j.createdAt)}${b ? " · " + esc(b.t) : " · freeform"}</span>
               </div>
               ${j.prompt ? `<div class="muted small je-prompt">${esc(j.prompt)}</div>` : ""}
-              <div class="body">${j.kind === "quote" ? "❝ " + esc(j.text) + " ❞" : esc(j.text)}</div>
-              ${j.images?.length ? `<div class="imgs">${j.images.map((src) => `<img src="${src}" alt="">`).join("")}</div>` : ""}
+              <div class="body rich-body">${entryBodyHTML(j)}</div>
               <div class="btn-row"><button class="btn quiet sm" data-jedit="${j.id}">Edit</button></div>
             </div>`;
           }).join("")
         : `<div class="card empty">
             ${logoChip(16, 70)}
-            <div class="serif">The margins are all yours.</div>
-            <p>Reflections, character notes, close reads, quotes worth keeping — they live here.</p>
-            <button class="btn solid" id="j-first">Write your first entry</button>
+            <div class="serif">${journalBookQuery || journalFilter !== "all" ? "Nothing matches yet." : "The margins are all yours."}</div>
+            <p>${journalBookQuery || journalFilter !== "all" ? "Try a different search or filter." : "Reflections, character notes, close reads, quotes worth keeping — they live here."}</p>
+            ${!journalBookQuery && journalFilter === "all" ? `<button class="btn solid" id="j-first">Write your first entry</button>` : ""}
           </div>`}
     </div>`;
 
@@ -692,6 +738,7 @@ function renderJournal() {
   $("[data-back-home]", root)?.addEventListener("click", () => navigate("home"));
   $("#j-new")?.addEventListener("click", () => openJournalEditor());
   $("#j-first")?.addEventListener("click", () => openJournalEditor());
+  $("#j-search", root).addEventListener("input", (e) => { journalBookQuery = e.target.value; renderJournal(); });
   $$("[data-jf]", root).forEach((b) => b.addEventListener("click", () => { journalFilter = b.dataset.jf; renderJournal(); }));
   $$("[data-jedit]", root).forEach((b) => b.addEventListener("click", () => {
     const entry = S.journal.find((j) => j.id === b.dataset.jedit);
@@ -699,98 +746,156 @@ function renderJournal() {
   }));
 }
 
+/* ---------------- full-screen, Notion-style diary editor ---------------- */
 function openJournalEditor(opts = {}) {
   const { bookId = null, presetKind = null, entry = null } = opts;
-  let images = entry ? [...(entry.images || [])] : [];
   let kind = entry ? entry.kind : (presetKind || "reflection");
   let chosenPrompt = entry ? entry.prompt : null;
+  let selectedBookId = entry ? entry.bookId : bookId;
   const isEdit = !!entry;
-
   const promptsFor = (k) => k === "reflection" ? EMOTIONAL_PROMPTS : k === "character" ? CHARACTER_PROMPTS : k === "analysis" ? ANALYSIS_PROMPTS : [];
 
-  const draw = (sheet) => {
-    $("#je-kinds", sheet).innerHTML = JOURNAL_KINDS.map((k) =>
-      `<button data-k="${k.id}" class="${kind === k.id ? "active" : ""}">${icon(k.ic, { size: 15 })} ${k.label}</button>`).join("");
+  const el = document.createElement("div");
+  el.className = "journal-fs";
+  document.body.appendChild(el);
+
+  const selectedBook = () => selectedBookId ? S.books.find((x) => x.id === selectedBookId) : null;
+  const initialContent = entry ? (entry.html || (entry.text ? esc(entry.text).replace(/\n/g, "<br>") + (entry.images || []).map((s) => `<br><img src="${s}">`).join("") : "")) : "";
+
+  const draw = () => {
     const prompts = promptsFor(kind);
-    $("#je-prompts", sheet).innerHTML = prompts.length
-      ? prompts.map((p, i) => `<button data-prompt="${i}" class="${chosenPrompt === p ? "on" : ""}">${esc(p)}</button>`).join("")
-      : "";
-    $("#je-text", sheet).placeholder = kind === "quote"
-      ? "The line you'd copy into a notebook…"
-      : JOURNAL_KINDS.find((k) => k.id === kind).hint;
-
-    $$("[data-k]", sheet).forEach((b) => b.addEventListener("click", () => { kind = b.dataset.k; chosenPrompt = null; draw(sheet); }));
-    $$("[data-prompt]", sheet).forEach((b) => b.addEventListener("click", () => {
-      chosenPrompt = prompts[+b.dataset.prompt];
-      $("#je-text", sheet).focus();
-      draw(sheet);
-    }));
-  };
-
-  openSheet(`
-    <h2 style="margin-bottom:4px">${isEdit ? "Edit entry" : "New journal entry"}</h2>
-    <p class="muted" style="margin-bottom:12px">${isEdit ? "Change your mind? Rewrite it." : "Deeper than a review — this one's just for you."}</p>
-    <label class="field"><span>About</span>
-      <select id="je-book">
-        <option value="">Freeform — just thoughts</option>
-        ${S.books.map((b) => `<option value="${b.id}" ${b.id === (entry ? entry.bookId : bookId) ? "selected" : ""}>${esc(b.t)}</option>`).join("")}
-      </select></label>
-    <div class="eyebrow">Kind of entry</div>
-    <div class="kind-row" id="je-kinds"></div>
-    <div class="prompt-pills" id="je-prompts"></div>
-    <textarea id="je-text" rows="7">${esc(entry ? entry.text : "")}</textarea>
-    <label class="field" style="margin-top:12px"><span>Attach photos <span class="muted">(a marked-up page, a view, a note)</span></span>
-      <div class="btn-row" style="margin-top:0">
-        <button class="btn ghost sm" id="je-camera-btn">${icon("camera", { size: 15 })} Add photo</button>
+    el.innerHTML = `
+      <div class="jfs-top">
+        <button class="iconbtn" id="jfs-close">${icon("x", { size: 16 })}</button>
+        <div class="jfs-book-picker" id="jfs-picker">
+          <button class="jfs-book-btn" id="jfs-book-btn">
+            ${selectedBook() ? `${icon("book", { size: 13 })} ${esc(selectedBook().t.slice(0, 26))}${selectedBook().t.length > 26 ? "…" : ""}` : `${icon("feather", { size: 13 })} Freeform`}
+            ${icon("chev_l", { size: 11, cls: "jfs-chev" })}
+          </button>
+        </div>
+        <button class="btn sm solid" id="jfs-save">${isEdit ? "Save" : "Keep this"}</button>
       </div>
-      <input id="je-imgs" type="file" accept="image/*" multiple class="hidden"></label>
-    <div class="attach-strip" id="je-strip"></div>
-    <div class="btn-row">
-      <button class="btn solid" id="je-save">${isEdit ? "Save changes" : "Keep this"}</button>
-      ${isEdit ? `<button class="btn quiet" id="je-del" style="color:var(--ember)">Delete entry</button>` : ""}
-    </div>
-  `, (sheet) => {
-    draw(sheet);
-    const drawStrip = (m2) => {
-      $("#je-strip", m2).innerHTML = images.map((src, i) =>
-        `<div class="thumb"><img src="${src}"><button class="rm" data-rm="${i}">${icon("x", { size: 11 })}</button></div>`).join("");
-      $$("[data-rm]", m2).forEach((b) => b.addEventListener("click", () => { images.splice(+b.dataset.rm, 1); drawStrip(m2); }));
-    };
-    drawStrip(sheet);
-    $("#je-camera-btn", sheet).addEventListener("click", () => $("#je-imgs", sheet).click());
-    $("#je-imgs", sheet).addEventListener("change", async (e) => {
-      for (const f of e.target.files) {
-        if (images.length >= 4) { toast("Four photos per entry keeps things tidy."); break; }
-        images.push(await fileToDataURL(f, 560));
-      }
-      drawStrip(sheet);
+      <div class="kind-row jfs-kinds">
+        ${JOURNAL_KINDS.map((k) => `<button data-k="${k.id}" class="${kind === k.id ? "active" : ""}">${icon(k.ic, { size: 14 })} ${k.label}</button>`).join("")}
+      </div>
+      ${prompts.length ? `<div class="prompt-pills jfs-prompts">
+        ${prompts.map((p, i) => `<button data-prompt="${i}" class="${chosenPrompt === p ? "on" : ""}">${esc(p)}</button>`).join("")}
+      </div>` : ""}
+      <div class="jfs-page">
+        <div id="jfs-editor" class="jfs-editor" contenteditable="true" data-placeholder="${kind === "quote" ? "The line you'd copy into a notebook…" : JOURNAL_KINDS.find((k) => k.id === kind).hint}">${initialContent}</div>
+      </div>
+      <div class="jfs-toolbar">
+        <button class="btn ghost sm" id="jfs-img-btn">${icon("camera", { size: 14 })} Insert image</button>
+        <input id="jfs-img-file" type="file" accept="image/*" multiple class="hidden">
+        <span class="muted small">Paste an image right into the page, too</span>
+        ${isEdit ? `<button class="btn quiet sm" id="jfs-del" style="color:var(--ember);margin-left:auto">Delete</button>` : ""}
+      </div>
+    `;
+
+    $("#jfs-close", el).addEventListener("click", closeEditor);
+    $("#jfs-book-btn", el).addEventListener("click", openBookSearchPicker);
+    $$("[data-k]", el).forEach((b) => b.addEventListener("click", () => { kind = b.dataset.k; chosenPrompt = null; draw(); }));
+    $$("[data-prompt]", el).forEach((b) => b.addEventListener("click", () => {
+      chosenPrompt = prompts[+b.dataset.prompt];
+      draw();
+      $("#jfs-editor", el).focus();
+    }));
+
+    const editor = $("#jfs-editor", el);
+    editor.addEventListener("paste", async (e) => {
+      const items = [...(e.clipboardData?.items || [])];
+      const imgItem = items.find((it) => it.type.startsWith("image/"));
+      if (!imgItem) return; // let normal text paste happen
+      e.preventDefault();
+      const file = imgItem.getAsFile();
+      const dataURL = await fileToDataURL(file, 720, 0.82);
+      insertImageAtCursor(editor, dataURL);
     });
-    $("#je-save", sheet).addEventListener("click", () => {
-      const text = $("#je-text", sheet).value.trim();
-      if (!text && !images.length) { toast("A few words, or a photo — something to keep."); return; }
-      const newBookId = $("#je-book", sheet).value || null;
+    $("#jfs-img-btn", el).addEventListener("click", () => $("#jfs-img-file", el).click());
+    $("#jfs-img-file", el).addEventListener("change", async (e) => {
+      for (const f of e.target.files) {
+        const dataURL = await fileToDataURL(f, 720, 0.82);
+        insertImageAtCursor(editor, dataURL);
+      }
+      e.target.value = "";
+    });
+
+    $("#jfs-save", el).addEventListener("click", () => {
+      const html = $("#jfs-editor", el).innerHTML.trim();
+      const plain = $("#jfs-editor", el).textContent.trim();
+      const hasImage = /<img/i.test(html);
+      if (!plain && !hasImage) { toast("A few words, or a photo — something to keep."); return; }
       if (isEdit) {
-        Object.assign(entry, { bookId: newBookId, text, kind, prompt: chosenPrompt, images });
-        saveState(); closeSheet();
-        toast("Updated.");
+        Object.assign(entry, { bookId: selectedBookId, kind, prompt: chosenPrompt, html, text: plain, images: [] });
+        saveState(); closeEditor(); toast("Updated.");
       } else {
         const deep = kind === "analysis" || kind === "character";
-        S.journal.push({
-          id: uid(), bookId: newBookId, text, kind, prompt: chosenPrompt, images,
-          createdAt: new Date().toISOString(),
-        });
+        S.journal.push({ id: uid(), bookId: selectedBookId, kind, prompt: chosenPrompt, html, text: plain, images: [], createdAt: new Date().toISOString() });
         grantXP(deep ? XP_RULES.deepJournalEntry : XP_RULES.journalEntry, "Journal: " + kind);
-        checkAchievements(); saveState(); closeSheet();
+        checkAchievements(); saveState(); closeEditor();
         toast(kind === "quote" ? "Pressed between the pages." : "Noted, carefully.");
       }
       render();
     });
-    $("#je-del", sheet)?.addEventListener("click", () => {
+    $("#jfs-del", el)?.addEventListener("click", () => {
       if (!confirm("Remove this entry for good?")) return;
       S.journal = S.journal.filter((j) => j.id !== entry.id);
-      saveState(); closeSheet(); render();
+      saveState(); closeEditor(); render();
     });
-  });
+  };
+
+  function insertImageAtCursor(editor, dataURL) {
+    editor.focus();
+    const img = `<img src="${dataURL}" style="max-width:100%;border-radius:10px;margin:10px 0;display:block">`;
+    if (document.queryCommandSupported && document.queryCommandSupported("insertHTML")) {
+      document.execCommand("insertHTML", false, img + "<br>");
+    } else {
+      editor.innerHTML += img + "<br>";
+    }
+  }
+
+  function openBookSearchPicker() {
+    let q = "";
+    openSheet(`
+      <h2 style="margin-bottom:12px">About this entry</h2>
+      <input id="jbp-search" placeholder="Search your library, or leave blank for freeform…" autocomplete="off">
+      <div id="jbp-list" style="margin-top:14px"></div>
+    `, (sheet) => {
+      const input = $("#jbp-search", sheet);
+      const listEl = $("#jbp-list", sheet);
+      const drawList = () => {
+        const query = q.trim().toLowerCase();
+        const matches = query
+          ? S.books.filter((b) => (b.t + " " + (b.a || "")).toLowerCase().includes(query)).slice(0, 8)
+          : S.books.slice().sort((a, b) => (b.addedAt || "").localeCompare(a.addedAt || "")).slice(0, 8);
+        listEl.innerHTML = `
+          <div class="jbp-row ${!selectedBookId ? "on" : ""}" data-pick="">
+            ${icon("feather", { size: 15 })} <span>Freeform — just thoughts</span>
+          </div>
+          ${matches.map((b) => `<div class="jbp-row ${selectedBookId === b.id ? "on" : ""}" data-pick="${b.id}">
+            ${coverHTML(b, "cover")}<span>${esc(b.t)}<br><span class="muted small">${esc(b.a || "")}</span></span>
+          </div>`).join("")}
+          ${query && !matches.length ? `<p class="muted small" style="text-align:center;padding:14px">No books match "${esc(q)}".</p>` : ""}
+        `;
+        $$("[data-pick]", listEl).forEach((row) => row.addEventListener("click", () => {
+          selectedBookId = row.dataset.pick || null;
+          closeSheet();
+          draw();
+        }));
+      };
+      drawList();
+      input.addEventListener("input", (e) => { q = e.target.value; drawList(); });
+    });
+  }
+
+  function closeEditor() {
+    el.remove();
+    document.removeEventListener("keydown", escHandler);
+  }
+  const escHandler = (e) => { if (e.key === "Escape") closeEditor(); };
+  document.addEventListener("keydown", escHandler);
+
+  draw();
 }
 
 function openBacklog(b) {
@@ -879,8 +984,8 @@ function openBookSheet(id) {
         const kd = JOURNAL_KINDS.find((k) => k.id === n.kind) || JOURNAL_KINDS[0];
         return `<div class="mini-entry">
           <div class="je-top"><span class="chip gold">${icon(kd.ic, { size: 11 })} ${kd.label}</span><span class="muted small">${fmtDateNice(n.createdAt)}</span></div>
-          <p style="font-family:var(--font-d);font-size:15px;${n.kind === "quote" ? "font-style:italic" : ""}">${n.kind === "quote" ? "❝ " : ""}${esc(n.text.slice(0, 140))}${n.text.length > 140 ? "…" : ""}${n.kind === "quote" ? " ❞" : ""}</p>
-          ${n.images?.length ? `<div class="imgs">${n.images.slice(0,3).map((src) => `<img src="${src}">`).join("")}</div>` : ""}
+          <p style="font-family:var(--font-d);font-size:15px;${n.kind === "quote" ? "font-style:italic" : ""}">${n.kind === "quote" ? "❝ " : ""}${esc(entryPreviewText(n, 140))}${n.kind === "quote" ? " ❞" : ""}</p>
+          <div class="btn-row"><button class="btn quiet sm" data-mini-jedit="${n.id}">Edit</button></div>
         </div>`;
       }).join("")}
       <div class="btn-row"><button class="btn quiet sm" id="see-all-journal">See all in Journal</button></div>` : ""}
@@ -912,7 +1017,11 @@ function openBookSheet(id) {
       if (act === "card") { closeSheet(); openShareCard({ kind: "book", book: b }); }
       if (act === "backlog") { closeSheet(); openBacklog(b); }
     }));
-    $("#see-all-journal", sheet)?.addEventListener("click", () => { closeSheet(); journalFilter = b.id; navigate("journal"); });
+    $("#see-all-journal", sheet)?.addEventListener("click", () => { closeSheet(); journalFilter = "all"; journalBookQuery = b.t; navigate("journal"); });
+    $$("[data-mini-jedit]", sheet).forEach((btn) => btn.addEventListener("click", () => {
+      const n = S.journal.find((j) => j.id === btn.dataset.miniJedit);
+      if (n) openJournalEditor({ entry: n });
+    }));
     $$("#rate span", sheet).forEach((s) => s.addEventListener("click", () => {
       b.rating = +s.dataset.r; saveState();
       $$("#rate span", sheet).forEach((x) => x.classList.toggle("on", +x.dataset.r <= b.rating));
@@ -1448,9 +1557,19 @@ function renderProfile() {
   const cur = xpForLevel(lv), next = xpForLevel(lv + 1);
   const lvPct = Math.min(100, Math.round((S.xp - cur) / (next - cur) * 100));
   const unlockedN = Object.keys(S.unlocked).length;
+  const readerProfileText = ensureReaderProfileFresh();
 
   root.innerHTML = `${topbar()}
     <div class="view">
+      <div class="card eared reader-profile-card rise">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span class="eyebrow" style="margin:0">${icon("sparkle", { size: 12 })} Your reading profile</span>
+          <button class="iconbtn" id="pf-refresh-profile" title="Refresh">${icon("refresh", { size: 14 })}</button>
+        </div>
+        <p style="font-size:14.5px;line-height:1.55;margin:0">${esc(readerProfileText)}</p>
+        <p class="muted small" style="margin-top:8px">Updates weekly from your activity${navigator.onLine ? "" : " (you're offline right now, but this still works — it's computed on this device)"}.</p>
+      </div>
+
       <div class="profile-head rise">
         <button class="avatar-btn" id="pf-avatar-btn" aria-label="Change avatar">${avatarHTML(60)}</button>
         <h1>${esc(S.profile.name)}</h1>
@@ -1536,6 +1655,11 @@ function renderProfile() {
   wireTopbar(root);
   $("[data-share-wrap]", root).addEventListener("click", () => openShareCard({ kind: "weekstats" }));
   $("#pf-avatar-btn", root).addEventListener("click", openAvatarPicker);
+  $("#pf-refresh-profile", root).addEventListener("click", () => {
+    ensureReaderProfileFresh(true);
+    render();
+    toast("Refreshed.");
+  });
   $$("[data-reshare]", root).forEach((row) => row.querySelector("button").addEventListener("click", () => {
     const entry = S.shareHistory.find((h) => h.id === row.dataset.reshare);
     if (entry) openShareCard({ kind: "history", data: entry });

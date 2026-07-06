@@ -22,6 +22,7 @@ const defaultState = () => ({
   wrapsViewed: {}, // "YYYY-MM" -> true
   shareHistory: [], // past generated share cards, for re-sharing
   remoteCatalog: [], // books discovered live via Open Library, merged into the rec pool
+  readerProfile: null, // { weekKey, text, generatedAt } — a locally-computed reading-habits summary
   settings: { theme: "light" },
 });
 
@@ -38,6 +39,7 @@ function loadState() {
       wrapsViewed: Object.assign({}, s.wrapsViewed),
       shareHistory: Array.isArray(s.shareHistory) ? s.shareHistory : [],
       remoteCatalog: Array.isArray(s.remoteCatalog) ? s.remoteCatalog : [],
+      readerProfile: s.readerProfile || null,
     });
   } catch { return defaultState(); }
 }
@@ -492,6 +494,71 @@ function booksForShelf(max = 12) {
   return S.books.filter((b) => b.shelf === "finished")
     .sort((a, b) => (a.finishedAt || "").localeCompare(b.finishedAt || ""))
     .slice(-max);
+}
+
+/* ---------------- reader profile — a short, locally-computed reading-habits blurb ----------------
+   Not a live LLM call (this is a static, offline-first app with no backend) — instead it's a
+   deterministic read of the same signals an AI writeup would use: top genre/mood affinity,
+   time-of-day pattern, pace, streak, and what's currently open. Regenerates weekly, or on demand. */
+function isoWeekKey(d = new Date()) {
+  const onejan = new Date(d.getFullYear(), 0, 1);
+  const week = Math.ceil((((d - onejan) / 86400000) + onejan.getDay() + 1) / 7);
+  return `${d.getFullYear()}-W${week}`;
+}
+function timeOfDayPattern() {
+  const buckets = { morning: 0, afternoon: 0, evening: 0, night: 0 };
+  S.sessions.forEach((s) => {
+    const h = new Date(s.createdAt).getHours();
+    if (h >= 5 && h < 12) buckets.morning++;
+    else if (h >= 12 && h < 17) buckets.afternoon++;
+    else if (h >= 17 && h < 22) buckets.evening++;
+    else buckets.night++;
+  });
+  const top = Object.entries(buckets).sort((a, b) => b[1] - a[1])[0];
+  return top && top[1] > 0 ? top[0] : null;
+}
+function computeReaderProfileText() {
+  const g = globalStats();
+  const topGenreId = Object.entries(S.affinity.genres || {}).sort((a, b) => b[1] - a[1])[0]?.[0];
+  const topMoodId = Object.entries(S.affinity.moods || {}).sort((a, b) => b[1] - a[1])[0]?.[0];
+  const genreLabel = GENRES.find((x) => x.id === topGenreId)?.label;
+  const moodLabel = MOODS.find((x) => x.id === topMoodId)?.label.toLowerCase();
+  const reading = S.books.find((b) => b.shelf === "reading");
+  const tod = timeOfDayPattern();
+  const todPhrase = { morning: "in the morning", afternoon: "in the afternoon", evening: "in the evening", night: "late at night" }[tod];
+
+  const avgPace = (() => {
+    const withPace = S.sessions.filter((s) => s.minutes > 0 && (s.endPage || 0) > (s.startPage || 0));
+    if (!withPace.length) return null;
+    const total = withPace.reduce((a, s) => a + (s.endPage - s.startPage) / (s.minutes / 60), 0);
+    return Math.round(total / withPace.length);
+  })();
+
+  if (!S.sessions.length) {
+    return "Your reading profile is still taking shape — log a session or two and this will start to sound like you.";
+  }
+
+  const parts = [];
+  if (genreLabel && moodLabel) parts.push(`Mostly drawn to ${genreLabel.toLowerCase()}, especially when it leans ${moodLabel}`);
+  else if (genreLabel) parts.push(`Mostly drawn to ${genreLabel.toLowerCase()} right now`);
+  else parts.push("Still finding a favorite lane, and that's part of the fun");
+
+  if (todPhrase) parts.push(`you tend to read ${todPhrase}`);
+  if (avgPace) parts.push(`at a ${avgPace >= 45 ? "brisk" : avgPace >= 25 ? "steady" : "unhurried"} pace of about ${avgPace} pages an hour`);
+  if (g.streak >= 3) parts.push(`riding a ${g.streak}-day streak`);
+
+  let sentence = parts.join(", ") + ".";
+  sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+  if (reading) sentence += ` Right now, deep into "${reading.t}".`;
+  return sentence;
+}
+function ensureReaderProfileFresh(force = false) {
+  const wk = isoWeekKey();
+  if (!force && S.readerProfile && S.readerProfile.weekKey === wk) return S.readerProfile.text;
+  const text = computeReaderProfileText();
+  S.readerProfile = { weekKey: wk, text, generatedAt: new Date().toISOString() };
+  saveState();
+  return text;
 }
 
 /* ---------------- anchor book for lifetime/wrap share cards ---------------- */
