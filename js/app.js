@@ -1152,35 +1152,8 @@ function startTimer(bookId) {
   if (!ex) {
     setTimer({ bookId, last: Date.now(), acc: 0, paused: false, mood: null, notified60: false });
     maybeAskNotificationPermission();
-    showSessionStartPopup(bookId);
     updateCtaState();
   }
-}
-
-/* a brief, in-app animated confirmation — not an OS notification, since the
-   app is obviously open right now. Shows a live-ticking clock for a few
-   seconds, then fades. The persistent OS notification only appears once
-   the app is actually minimized (see the visibilitychange handler below). */
-function showSessionStartPopup(bookId) {
-  const book = S.books.find((b) => b.id === bookId);
-  const el = document.createElement("div");
-  el.className = "session-start-popup";
-  el.innerHTML = `
-    <div class="ssp-clock">0:00</div>
-    <div class="ssp-label">${book ? esc(book.t) : "Session"} started</div>
-  `;
-  document.body.appendChild(el);
-  const clockEl = $(".ssp-clock", el);
-  const startedAt = Date.now();
-  const tick = setInterval(() => {
-    const s = Math.floor((Date.now() - startedAt) / 1000);
-    clockEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-  }, 1000);
-  setTimeout(() => {
-    clearInterval(tick);
-    el.classList.add("out");
-    setTimeout(() => el.remove(), 400);
-  }, 3200);
 }
 
 /* ---------------- notifications: permission, persistent session control,
@@ -1773,7 +1746,10 @@ async function saveWrapSlideAsImage(viewerEl, ms, variant, btn) {
     out.width = OUT_W; out.height = OUT_H;
     const octx = out.getContext("2d");
     octx.fillStyle = bg; octx.fillRect(0, 0, OUT_W, OUT_H);
-    const scale = Math.max(OUT_W / captured.width, OUT_H / captured.height);
+    // contain-fit: never crops (a taller phone screen used to get its header/logo
+    // cut off under cover-fit); any leftover edge is just filled with the same
+    // solid background, which reads as intentional padding, not a bug.
+    const scale = Math.min(OUT_W / captured.width, OUT_H / captured.height);
     const sw = captured.width * scale, sh = captured.height * scale;
     octx.drawImage(captured, (OUT_W - sw) / 2, (OUT_H - sh) / 2, sw, sh);
 
@@ -2199,7 +2175,8 @@ document.addEventListener("cover", () => {
 /* ================================================================
    BACK BUTTON — closes a popup first, then goes Home, then confirms
    before actually leaving. Uses history.pushState as a "guard" so the
-   hardware/gesture back button can be intercepted in stages.
+   hardware/gesture back button can be intercepted in stages, at every
+   depth of the app, so nothing accidentally exits unconfirmed.
 ================================================================ */
 function pushBackGuard() {
   try { history.pushState({ dogeared: true }, ""); } catch {}
@@ -2230,10 +2207,19 @@ function showQuitConfirm() {
   pushBackGuard(); // so back-while-confirming just dismisses the confirm itself
 }
 window.addEventListener("popstate", () => {
-  if (!S.profile) return; // onboarding has its own step-back button; nothing to guard yet
+  if (!S.profile) return; // onboarding has its own step-back button; let default back behavior proceed
   if (closeTopmostOverlay()) { pushBackGuard(); return; }
   if (currentView !== "home") { navigate("home"); pushBackGuard(); return; }
   showQuitConfirm();
+});
+/* best-effort backstop for closing via the tab/window itself (swipe-away,
+   the browser's own close control) rather than the in-page back button —
+   browsers own this dialog's wording, so it won't carry our brand voice,
+   but it still adds one more "are you sure" before anything is lost. */
+window.addEventListener("beforeunload", (e) => {
+  if (!S.profile) return;
+  e.preventDefault();
+  e.returnValue = "";
 });
 
 /* ================================================================
@@ -2246,6 +2232,7 @@ function boot() {
   else navigate("home");
   startHeartbeat();
   pushBackGuard();
+  pushBackGuard(); // a second buffer state — some Android back-gesture implementations can consume more than one entry per swipe
 }
 
 if (!S.profile) {
