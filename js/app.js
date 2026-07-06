@@ -1970,15 +1970,19 @@ function accountSectionHTML() {
   }
   if (cloudUser) {
     const label = cloudStatusLabel();
+    const hasError = cloudStatus === "error";
     return `
       <div class="account-row">
         ${cloudUser.photoURL ? `<img class="account-avatar" src="${cloudUser.photoURL}" referrerpolicy="no-referrer" alt="">` : `<div class="account-avatar account-avatar-fallback">${icon("book", { size: 18 })}</div>`}
         <div style="flex:1;min-width:0">
           <div class="account-name">${esc(cloudUser.displayName || cloudUser.email || "Signed in")}</div>
-          <div class="muted small account-status">${esc(label || "")}</div>
+          <div class="muted small account-status" style="${hasError ? "color:var(--ember)" : ""}">${esc(label || "")}</div>
         </div>
       </div>
-      <div class="btn-row"><button class="btn ghost sm" id="acct-signout">Sign out</button></div>
+      <div class="btn-row">
+        ${hasError ? `<button class="btn ghost sm" id="acct-retry">${icon("refresh", { size: 13 })} Retry sync</button>` : ""}
+        <button class="btn ghost sm" id="acct-signout">Sign out</button>
+      </div>
       <p class="muted small" style="margin-top:6px">Signing out only signs out — your reading data stays on this device too.</p>`;
   }
   return `
@@ -2099,6 +2103,7 @@ function renderProfile() {
   $("#pf-name-btn", root).addEventListener("click", openRenameSheet);
   $("#acct-google", root)?.addEventListener("click", signInWithGoogle);
   $("#acct-signout", root)?.addEventListener("click", signOutCloud);
+  $("#acct-retry", root)?.addEventListener("click", () => pushCloudData(false));
   $("#pf-refresh-profile", root).addEventListener("click", () => {
     ensureReaderProfileFresh(true);
     render();

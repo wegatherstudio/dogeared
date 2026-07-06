@@ -95,6 +95,19 @@ function signOutCloud() {
   });
 }
 
+let lastSyncError = null; // {code, message} — shown in the Account card so you don't need DevTools
+
+function firestoreErrorMessage(e) {
+  const code = e?.code || "";
+  console.error("Firestore error:", code, e?.message);
+  if (code === "permission-denied") return "Firestore rejected the request — double-check your security rules are published and match the ones in the README.";
+  if (code === "not-found") return "The Firestore database doesn't exist yet for this project — create it under Firebase → Build → Firestore Database.";
+  if (code === "resource-exhausted") return "Your reading data is too large for one document (Firestore's 1MB cap) — likely a lot of embedded journal photos.";
+  if (code === "unavailable" || code === "deadline-exceeded") return "Couldn't reach Firestore — check your connection and try again.";
+  if (code === "unauthenticated") return "Your sign-in expired — sign in again.";
+  return `Sync failed (${code || e?.message || "unknown error"}) — check the browser console for the full error.`;
+}
+
 /* ---------------- sign-in → merge decision ---------------- */
 async function onSignedIn(user) {
   cloudStatus = "syncing"; refreshAccountUI();
@@ -114,10 +127,12 @@ async function onSignedIn(user) {
       await pushCloudData(true);
       toast("Synced to your Google account.");
     }
-    cloudStatus = "synced";
+    cloudStatus = "synced"; lastSyncError = null;
   } catch (e) {
-    console.error(e);
+    const msg = firestoreErrorMessage(e);
+    lastSyncError = { code: e?.code, message: msg };
     cloudStatus = navigator.onLine ? "error" : "offline";
+    if (navigator.onLine) toast(msg);
   }
   refreshAccountUI();
 }
@@ -172,10 +187,12 @@ async function pushCloudData(immediate) {
     payload.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
     await fbDb.collection("users").doc(cloudUser.uid).set(payload);
     localStorage.setItem(LAST_PUSH_KEY, String(Date.now()));
-    cloudStatus = "synced";
+    cloudStatus = "synced"; lastSyncError = null;
   } catch (e) {
-    console.error(e);
+    const msg = firestoreErrorMessage(e);
+    lastSyncError = { code: e?.code, message: msg };
     cloudStatus = "error";
+    if (!immediate) toast(msg); // the very first push already gets a toast from onSignedIn; don't double up
   }
   refreshAccountUI();
 }
@@ -197,6 +214,7 @@ if (typeof saveState === "function") {
 function cloudStatusLabel() {
   if (!CLOUD_ENABLED) return null;
   if (!cloudUser) return null;
+  if (cloudStatus === "error" && lastSyncError) return lastSyncError.message;
   return {
     syncing: "Syncing…",
     synced: "Synced",
