@@ -77,13 +77,21 @@ function drawShareCard(canvas, opts) {
   const transparent = style === "transparent";
   ctx.clearRect(0, 0, W, H);
 
-  const fillBackground = (stops) => {
+  const fillBackground = (stops, isThemeGradient) => {
     if (transparent) return;
     const grad = ctx.createLinearGradient(0, 0, W, H);
     grad.addColorStop(0, stops[0]);
     grad.addColorStop(1, stops[1]);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
+    // the cover-derived gradient can occasionally be too light for white
+    // text (a pale or brightly-colored cover) — a flat dark scrim
+    // guarantees safe contrast no matter the source color, without
+    // affecting the "Classic" grayscale gradient, which is already dark.
+    if (isThemeGradient) {
+      ctx.fillStyle = "rgba(0,0,0,0.3)";
+      ctx.fillRect(0, 0, W, H);
+    }
     ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.beginPath(); ctx.moveTo(W - 120, 0); ctx.lineTo(W, 0); ctx.lineTo(W, 120); ctx.closePath(); ctx.fill();
     ctx.fillStyle = "rgba(0,0,0,0.22)";
@@ -309,7 +317,7 @@ function drawShareCard(canvas, opts) {
     img.crossOrigin = "anonymous";
     img.onload = () => {
       const stops = style === "theme" ? themeStopsFromImage(img) : DEFAULT_GRADIENT;
-      fillBackground(stops);
+      fillBackground(stops, style === "theme");
       ctx.save();
       ctx.shadowColor = "rgba(0,0,0,.4)"; ctx.shadowBlur = 50; ctx.shadowOffsetY = 20;
       roundImg(ctx, img, cx, startY, COVER_W, COVER_H, 18);
@@ -318,7 +326,7 @@ function drawShareCard(canvas, opts) {
     };
     img.onerror = () => {
       const stops = style === "theme" ? themeStopsFromGenre(opts.book) : DEFAULT_GRADIENT;
-      fillBackground(stops);
+      fillBackground(stops, style === "theme");
       drawCoverPlaceholder(cx, startY, COVER_W, COVER_H);
       drawTextBlock(startY + visualH + gapToTitle);
     };
@@ -327,7 +335,7 @@ function drawShareCard(canvas, opts) {
   }
   if (opts.book) {
     const stops = style === "theme" ? themeStopsFromGenre(opts.book) : DEFAULT_GRADIENT;
-    fillBackground(stops);
+    fillBackground(stops, style === "theme");
     drawCoverPlaceholder(cx, startY, COVER_W, COVER_H);
     drawTextBlock(startY + visualH + gapToTitle);
     return;

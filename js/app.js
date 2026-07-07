@@ -465,12 +465,21 @@ function removeCardFromFeed(id) {
   feedItems = feedItems.filter((c) => c.id !== id);
   const card = document.querySelector(`.feed-card[data-fc="${id}"]`);
   if (!card) return;
-  const next = card.nextElementSibling;
-  if (next) next.scrollIntoView({ behavior: "smooth" });
-  card.style.transition = "opacity .25s ease, transform .25s ease";
+  const feedEl = card.closest(".feed");
+  card.style.transition = "opacity .2s ease";
   card.style.opacity = "0";
-  card.style.transform = "scale(0.96)";
-  setTimeout(() => card.remove(), 260);
+  card.style.pointerEvents = "none";
+  setTimeout(() => {
+    // Removing an earlier card shifts everything after it up by exactly its
+    // own height. Keeping scrollTop numerically unchanged (rather than
+    // scrolling programmatically) means the next card slides straight into
+    // the removed one's place — no jump, and critically, no risk of
+    // overshooting past an extra card the way an animated scrollIntoView
+    // call racing against this removal used to cause.
+    const scrollTopBefore = feedEl ? feedEl.scrollTop : 0;
+    card.remove();
+    if (feedEl) feedEl.scrollTop = scrollTopBefore;
+  }, 200);
 }
 
 function resolveCoversFor(items, scope) {
@@ -1695,7 +1704,17 @@ function resolveCardData(cfg) {
 }
 
 function openShareCard(cfg) {
-  let styleDefs = [["gradient", "Classic"], ["transparent", "Transparent"]];
+  // the cover-derived gradient is a deliberate exception to the app's
+  // black/white/gray UI — it only ever appears on share cards anchored to
+  // a specific book (finishing a book, a reading session), where a gradient
+  // pulled from that exact cover makes the card feel personalized. Weekly
+  // stats, the monthly wrap, and the lifetime card stay grayscale, since
+  // they aren't about one cover.
+  const bookAnchored = cfg.kind === "book" || cfg.kind === "session"
+    || (cfg.kind === "history" && ["book", "session"].includes(cfg.data?.kind));
+  let styleDefs = bookAnchored
+    ? [["theme", "Cover gradient"], ["gradient", "Classic"], ["transparent", "Transparent"]]
+    : [["gradient", "Classic"], ["transparent", "Transparent"]];
   if (cfg.kind === "monthwrap") styleDefs = styleDefs.filter(([id]) => id !== "transparent");
   let style = styleDefs[0][0];
   const cardData = resolveCardData(cfg);
