@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Dogeared — Viewport Diagnostic</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: #16130E; color: #EFE9D8; font-family: -apple-system, sans-serif; }
+  body { padding: max(16px, env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); font-size: 14px; line-height: 1.5; }
+  h1 { font-size: 17px; margin: 0 0 4px; }
+  p.sub { color: #b8b0a0; margin: 0 0 18px; font-size: 12.5px; }
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid rgba(239,233,216,.12); }
+  .row .k { color: #b8b0a0; }
+  .row .v { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; }
+  .section { margin-top: 22px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #BDAD25; }
+  .bar-demo {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    background: rgba(189,173,37,.35); border-top: 2px solid #BDAD25;
+    height: 60px; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; color: #FFF9EC; text-align: center; padding: 0 10px;
+  }
+  .refresh { margin-top: 20px; display: inline-block; background: #A0732F; color: #FFF9EC; padding: 10px 18px; border-radius: 99px; text-decoration: none; font-size: 13px; }
+</style>
+</head>
+<body>
+  <h1>Viewport Diagnostic</h1>
+  <p class="sub">Screenshot this whole screen (including the highlighted bar at the very bottom) and send it back. Numbers update live — try scrolling and rotating too.</p>
+
+  <div class="section">Window</div>
+  <div class="row"><span class="k">window.innerHeight</span><span class="v" id="v-innerH">–</span></div>
+  <div class="row"><span class="k">window.innerWidth</span><span class="v" id="v-innerW">–</span></div>
+  <div class="row"><span class="k">screen.height</span><span class="v" id="v-screenH">–</span></div>
+  <div class="row"><span class="k">devicePixelRatio</span><span class="v" id="v-dpr">–</span></div>
+
+  <div class="section">Visual Viewport</div>
+  <div class="row"><span class="k">visualViewport.height</span><span class="v" id="v-vvH">–</span></div>
+  <div class="row"><span class="k">visualViewport.offsetTop</span><span class="v" id="v-vvTop">–</span></div>
+  <div class="row"><span class="k">visualViewport.scale</span><span class="v" id="v-vvScale">–</span></div>
+  <div class="row"><span class="k">gap (innerHeight − visible)</span><span class="v" id="v-gap">–</span></div>
+
+  <div class="section">Document</div>
+  <div class="row"><span class="k">documentElement.clientHeight</span><span class="v" id="v-docH">–</span></div>
+  <div class="row"><span class="k">body.scrollHeight</span><span class="v" id="v-scrollH">–</span></div>
+  <div class="row"><span class="k">--app-height (if set)</span><span class="v" id="v-appH">–</span></div>
+
+  <div class="section">Mode</div>
+  <div class="row"><span class="k">navigator.standalone</span><span class="v" id="v-standalone">–</span></div>
+  <div class="row"><span class="k">display-mode: standalone</span><span class="v" id="v-dm">–</span></div>
+  <div class="row"><span class="k">safe-area-inset-bottom</span><span class="v" id="v-safe">–</span></div>
+
+  <div class="section">This demo bar below</div>
+  <div class="row"><span class="k">Is there a gap under it?</span><span class="v">👀 look down</span></div>
+
+  <a class="refresh" href="javascript:location.reload()">Refresh numbers</a>
+
+  <div class="bar-demo" id="bar">This is a plain "position:fixed;bottom:0" bar — nothing fancy, no JS correction at all.</div>
+
+<script>
+function fmt(n) { return (typeof n === 'number') ? Math.round(n * 100) / 100 : n; }
+function update() {
+  document.getElementById('v-innerH').textContent = fmt(window.innerHeight) + ' px';
+  document.getElementById('v-innerW').textContent = fmt(window.innerWidth) + ' px';
+  document.getElementById('v-screenH').textContent = fmt(window.screen?.height) + ' px';
+  document.getElementById('v-dpr').textContent = fmt(window.devicePixelRatio);
+
+  if (window.visualViewport) {
+    const vv = window.visualViewport;
+    document.getElementById('v-vvH').textContent = fmt(vv.height) + ' px';
+    document.getElementById('v-vvTop').textContent = fmt(vv.offsetTop) + ' px';
+    document.getElementById('v-vvScale').textContent = fmt(vv.scale);
+    document.getElementById('v-gap').textContent = fmt(window.innerHeight - (vv.height + vv.offsetTop)) + ' px';
+  } else {
+    document.getElementById('v-vvH').textContent = 'not supported';
+    document.getElementById('v-vvTop').textContent = 'not supported';
+    document.getElementById('v-vvScale').textContent = 'not supported';
+    document.getElementById('v-gap').textContent = 'n/a';
+  }
+
+  document.getElementById('v-docH').textContent = fmt(document.documentElement.clientHeight) + ' px';
+  document.getElementById('v-scrollH').textContent = fmt(document.body.scrollHeight) + ' px';
+  document.getElementById('v-appH').textContent = getComputedStyle(document.documentElement).getPropertyValue('--app-height') || '(not set)';
+
+  document.getElementById('v-standalone').textContent = (window.navigator.standalone === true) ? 'true' : String(window.navigator.standalone);
+  document.getElementById('v-dm').textContent = window.matchMedia('(display-mode: standalone)').matches ? 'true' : 'false';
+
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;bottom:0;height:0;padding-bottom:env(safe-area-inset-bottom);visibility:hidden;';
+  document.body.appendChild(probe);
+  document.getElementById('v-safe').textContent = getComputedStyle(probe).paddingBottom;
+  probe.remove();
+}
+update();
+window.addEventListener('resize', update);
+window.visualViewport?.addEventListener('resize', update);
+window.visualViewport?.addEventListener('scroll', update);
+setInterval(update, 1000);
+</script>
+</body>
+</html>
