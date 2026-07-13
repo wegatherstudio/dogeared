@@ -1,5 +1,5 @@
 /* Dogeared service worker — offline app shell caching */
-const CACHE = "dogeared-v25";
+const CACHE = "dogeared-v28";
 const CORE_SHELL = [
   "./", "./index.html", "./manifest.webmanifest",
   "./css/styles.css",
@@ -59,15 +59,17 @@ self.addEventListener("fetch", (e) => {
    clients.openWindow isn't reliable across browsers). */
 self.addEventListener("notificationclick", (event) => {
   const action = event.action || "open";
+  const data = event.notification.data || null;
   event.notification.close();
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
       const client = list[0];
       if (client) {
-        client.postMessage({ type: "notification-action", action });
+        client.postMessage({ type: "notification-action", action, data });
         return client.focus();
       }
-      return self.clients.openWindow(`./index.html?notif=${action}`);
+      const bookParam = data?.bookId ? `&book=${encodeURIComponent(data.bookId)}` : "";
+      return self.clients.openWindow(`./index.html?notif=${action}${bookParam}`);
     })
   );
 });

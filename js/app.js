@@ -26,6 +26,8 @@ systemDarkQuery?.addEventListener?.("change", () => {
 
 const logoChip = (px, imgSize) =>
   `<span class="logo-chip" style="padding:${px}px"><img src="icons/logo.png" alt="" style="width:${imgSize}px;display:block"></span>`;
+/* a quiet tactile touch on timer actions, where supported — no-op elsewhere */
+const haptic = (ms = 12) => { try { navigator.vibrate?.(ms); } catch {} };
 
 function avatarSrc(profile) {
   const a = profile?.avatar;
@@ -165,7 +167,7 @@ function runOnboarding() {
       if (step === 4) {
         S.profile = {
           name: picks.name.trim(), genres: picks.genres, moods: picks.moods,
-          dailyGoal: picks.goal, joinedAt: new Date().toISOString(),
+          dailyGoal: picks.goal, yearlyGoal: 24, joinedAt: new Date().toISOString(),
         };
         picks.genres.forEach((g) => S.affinity.genres[g] = 2);
         picks.moods.forEach((m) => S.affinity.moods[m] = 2);
@@ -188,6 +190,7 @@ function runOnboarding() {
 ================================================================ */
 let currentView = "home";
 let libFilter = "reading";
+let libEraView = false; // groups the finished shelf by year instead of a flat grid
 let journalFilter = "all";
 
 function navigate(v) {
@@ -236,7 +239,7 @@ function renderHome() {
   const reading = S.books.filter((b) => b.shelf === "reading");
   const recentJournal = S.journal.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 2);
   const doy = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
-  const [q, who] = QUOTES[doy % QUOTES.length];
+  const [q, who, whatBook] = QUOTES[doy % QUOTES.length];
   const hour = new Date().getHours();
   const greet = hour < 5 ? "Reading past midnight" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const wrapYm = pendingWrapMonth();
@@ -263,6 +266,33 @@ function renderHome() {
       </div>` : ""}
 
       <div class="hello rise"><div class="hi">${greet}</div><h1>${esc(S.profile.name)}</h1></div>
+
+      ${(() => {
+        const mem = onThisDayMemory();
+        if (mem) {
+          const label = mem.type === "finish"
+            ? `${mem.yearsAgo === 1 ? "A year ago today" : mem.yearsAgo + " years ago today"}, you finished`
+            : `${mem.yearsAgo === 1 ? "A year ago today" : mem.yearsAgo + " years ago today"}, you were reading`;
+          return `<div class="card eared on-this-day rise" data-book="${mem.book.id}">
+            ${coverHTML(mem.book, "cover")}
+            <div style="flex:1;min-width:0">
+              <div class="muted small">${label}</div>
+              <div class="serif" style="font-size:16px;margin-top:2px">${esc(mem.book.t)}</div>
+            </div>
+          </div>`;
+        }
+        const dropped = droppedBookNudge();
+        if (dropped) {
+          return `<div class="card eared on-this-day rise" data-book="${dropped.id}">
+            ${coverHTML(dropped, "cover")}
+            <div style="flex:1;min-width:0">
+              <div class="muted small">Still curious about this one?</div>
+              <div class="serif" style="font-size:16px;margin-top:2px">${esc(dropped.t)}</div>
+            </div>
+          </div>`;
+        }
+        return "";
+      })()}
 
       <div class="card eared ring-card rise d1" style="margin-top:16px">
         <div class="ring-wrap">
@@ -328,7 +358,7 @@ function renderHome() {
       </div>
 
       <div class="card eared quote-block rise d4">
-        <div class="q">"${esc(q)}"</div><div class="w">— ${esc(who)}</div>
+        <div class="q">"${esc(q)}"</div><div class="w">— ${esc(who)}${whatBook ? `, <span class="wb">${esc(whatBook)}</span>` : ""}</div>
       </div>
     </div>`;
 
@@ -428,6 +458,22 @@ function feedCardHTML(cb) {
   </div>`;
 }
 
+/* a toast with a row of quick-tap reason chips underneath — used so a
+   skip can optionally carry a one-tap "why", without ever blocking the
+   skip itself (it's already happened by the time this shows) */
+function toastWithChips(message, chips, onPick) {
+  document.querySelector(".toast-chips")?.remove();
+  const el = document.createElement("div");
+  el.className = "toast toast-chips";
+  el.innerHTML = `<div>${esc(message)}</div><div class="tc-row">${chips.map((c, i) => `<button data-tc="${i}">${esc(c)}</button>`).join("")}</div>`;
+  document.body.appendChild(el);
+  el.querySelectorAll("[data-tc]").forEach((btn) => btn.addEventListener("click", () => {
+    onPick(chips[+btn.dataset.tc]);
+    el.remove();
+  }));
+  setTimeout(() => el.remove(), 5000);
+}
+
 function wireFeedActions(scope) {
   $$("[data-fc-start]", scope).forEach((b) => b.addEventListener("click", () => {
     const cb = findCandidate(b.dataset.fcStart);
@@ -452,8 +498,13 @@ function wireFeedActions(scope) {
     learnFrom(cb, "skip");
     if (!S.seenFeed.includes(cb.id)) S.seenFeed.push(cb.id);
     saveState();
-    toast("Won't show that one again.");
     removeCardFromFeed(cb.id);
+    toastWithChips("Won't show that one again. Why, if you don't mind?", ["Not my mood", "Too long", "Already know it"], (reason) => {
+      if (reason === "Not my mood") bump("moods", cb.m, -1.5); // extra nudge away from this book's specific moods
+      S.skipReasons = S.skipReasons || [];
+      S.skipReasons.push({ bookId: cb.id, reason, ts: new Date().toISOString() });
+      saveState();
+    });
   }));
 }
 
@@ -615,6 +666,27 @@ function openSearchResult(d) {
   });
 }
 
+function openFirstLinePrompt(b) {
+  openSheet(`
+    <h2 style="text-align:center;margin-bottom:6px">On the nightstand.</h2>
+    <p class="muted" style="text-align:center">Worth jotting the opening line of <em>${esc(b.t)}</em>? Entirely optional.</p>
+    <textarea id="fl-text" placeholder="The first line..." style="margin-top:14px"></textarea>
+    <div class="btn-row" style="justify-content:center">
+      <button class="btn solid" id="fl-save">Save it</button>
+      <button class="btn quiet" id="fl-skip">Skip</button>
+    </div>
+  `, (sheet) => {
+    $("#fl-save", sheet).addEventListener("click", () => {
+      const text = $("#fl-text", sheet).value.trim();
+      if (!text) { closeSheet(); openBookSheet(b.id); return; }
+      S.journal.push({ id: uid(), bookId: b.id, text, kind: "quote", createdAt: new Date().toISOString() });
+      saveState();
+      closeSheet(); openBookSheet(b.id); toast("First line kept.");
+    });
+    $("#fl-skip", sheet).addEventListener("click", () => { closeSheet(); openBookSheet(b.id); });
+  });
+}
+
 function openManualAdd(existing) {
   const b = existing;
   openSheet(`
@@ -624,6 +696,18 @@ function openManualAdd(existing) {
     <label class="field"><span>Total pages</span><input id="mb-p" type="number" min="1" value="${b?.p || ""}"></label>
     <label class="field"><span>Genre</span>
       <select id="mb-g">${GENRES.map((g) => `<option value="${g.id}" ${b?.g?.[0] === g.id ? "selected" : ""}>${g.label}</option>`).join("")}</select></label>
+    <label class="field"><span>Format</span>
+      <select id="mb-fmt">
+        <option value="physical" ${(!b?.format || b?.format === "physical") ? "selected" : ""}>Physical</option>
+        <option value="ebook" ${b?.format === "ebook" ? "selected" : ""}>Ebook</option>
+        <option value="audiobook" ${b?.format === "audiobook" ? "selected" : ""}>Audiobook</option>
+      </select></label>
+    <label class="field"><span>Why this one? (optional)</span><input id="mb-why" maxlength="80" placeholder="A recommendation, a mood, curiosity..." value="${esc(b?.whyPickedUp || "")}"></label>
+    <label class="field"><span>Because of (optional)</span><input id="mb-because" maxlength="40" placeholder="A friend's name, a podcast..." value="${esc(b?.becauseOf || "")}"></label>
+    <label style="display:flex;align-items:center;gap:8px;margin:12px 0;cursor:pointer">
+      <input type="checkbox" id="mb-borrowed" ${b?.borrowed ? "checked" : ""}> <span>Borrowed (library or a friend)</span>
+    </label>
+    <label class="field" id="mb-due-wrap" style="${b?.borrowed ? "" : "display:none"}"><span>Due back (optional)</span><input id="mb-due" type="date" value="${b?.dueDate ? b.dueDate.slice(0, 10) : ""}"></label>
     ${b ? "" : `<label class="field"><span>Shelf</span>
       <select id="mb-s"><option value="reading">Currently reading</option><option value="wishlist">Wishlist</option><option value="finished">Finished</option></select></label>`}
     <div class="btn-row">
@@ -631,13 +715,22 @@ function openManualAdd(existing) {
       ${b ? `<button class="btn quiet" id="mb-del" style="color:var(--ember)">Remove from library</button>` : ""}
     </div>
   `, (sheet) => {
+    $("#mb-borrowed", sheet).addEventListener("change", (e) => {
+      $("#mb-due-wrap", sheet).style.display = e.target.checked ? "" : "none";
+    });
     $("#mb-save", sheet).addEventListener("click", () => {
       const t = $("#mb-t", sheet).value.trim();
       if (!t) { toast("A title, at least."); return; }
+      const format = $("#mb-fmt", sheet).value;
+      const whyPickedUp = $("#mb-why", sheet).value.trim();
+      const becauseOf = $("#mb-because", sheet).value.trim();
+      const borrowed = $("#mb-borrowed", sheet).checked;
+      const dueDate = borrowed && $("#mb-due", sheet).value ? new Date($("#mb-due", sheet).value).toISOString() : null;
       if (b) {
         b.t = t; b.a = $("#mb-a", sheet).value.trim();
         b.p = parseInt($("#mb-p", sheet).value, 10) || b.p;
         b.g = [$("#mb-g", sheet).value];
+        b.format = format; b.whyPickedUp = whyPickedUp; b.becauseOf = becauseOf; b.borrowed = borrowed; b.dueDate = dueDate;
         saveState(); closeSheet(); render(); toast("Updated.");
       } else {
         const shelf = $("#mb-s", sheet).value;
@@ -649,6 +742,7 @@ function openManualAdd(existing) {
           startedAt: shelf === "reading" ? new Date().toISOString() : null,
           finishedAt: shelf === "finished" ? new Date().toISOString() : null,
           rating: 0, review: "", currentPage: 0, fav: false,
+          format, whyPickedUp, becauseOf, borrowed, dueDate,
         };
         S.books.push(nb); saveState(); resolveCover(nb);
         closeSheet(); render(); toast("Added to your library.");
@@ -680,24 +774,44 @@ function renderLibrary() {
     : S.books.filter((b) => b.shelf === libFilter)
   ).sort((a, b) => (b.addedAt || "").localeCompare(a.addedAt || ""));
 
+  const shelfItemHTML = (b) => {
+    const pc = b.p ? Math.min(100, Math.round((b.currentPage || 0) / b.p * 100)) : 0;
+    return `<div class="shelf-item" data-book="${b.id}">
+      ${coverHTML(b, "cover")}
+      <div class="t serif">${esc(b.t)}</div>
+      <div class="sub">${b.shelf === "finished" && b.rating ? "★".repeat(b.rating) : esc(b.a || "")}</div>
+      ${b.shelf === "reading" ? `<div class="mini-progress"><i style="width:${pc}%"></i></div>` : ""}
+    </div>`;
+  };
+
+  const showEraToggle = libFilter === "finished" && books.length > 0;
+  const erasHTML = () => {
+    const byYear = {};
+    books.forEach((b) => {
+      const y = b.finishedAt ? new Date(b.finishedAt).getFullYear() : "Undated";
+      (byYear[y] = byYear[y] || []).push(b);
+    });
+    const years = Object.keys(byYear).sort((a, b) => b - a);
+    return years.map((y) => `
+      <div class="eyebrow" style="margin:18px 0 10px">${y} <span class="muted" style="text-transform:none;letter-spacing:0">· ${byYear[y].length} book${byYear[y].length === 1 ? "" : "s"}</span></div>
+      <div class="shelf-grid">${byYear[y].map(shelfItemHTML).join("")}</div>
+    `).join("");
+  };
+
   root.innerHTML = `
     ${topbar(`<button class="iconbtn" data-open-search title="Search books">${icon("search", { size: 18 })}</button>`)}
     <div class="view">
-      <h1 style="margin-bottom:14px">Library</h1>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h1>Library</h1>
+        ${showEraToggle ? `<button class="btn ghost sm" id="lib-era-toggle">${libEraView ? "Shelf view" : "Reading eras"}</button>` : ""}
+        ${libFilter === "wishlist" && books.length ? `<button class="btn ghost sm" id="lib-share-stack">Share my stack</button>` : ""}
+      </div>
       <div class="seg">
         ${SHELF_DEFS.map(([k, l]) => `<button data-f="${k}" class="${k === libFilter ? "active" : ""}">${l}</button>`).join("")}
       </div>
-      ${books.length ? `<div class="shelf-grid">
-        ${books.map((b) => {
-          const pc = b.p ? Math.min(100, Math.round((b.currentPage || 0) / b.p * 100)) : 0;
-          return `<div class="shelf-item" data-book="${b.id}">
-            ${coverHTML(b, "cover")}
-            <div class="t serif">${esc(b.t)}</div>
-            <div class="sub">${b.shelf === "finished" && b.rating ? "★".repeat(b.rating) : esc(b.a || "")}</div>
-            ${b.shelf === "reading" ? `<div class="mini-progress"><i style="width:${pc}%"></i></div>` : ""}
-          </div>`;
-        }).join("")}
-      </div>` : `
+      ${books.length ? (showEraToggle && libEraView ? erasHTML() : `<div class="shelf-grid">
+        ${books.map(shelfItemHTML).join("")}
+      </div>`) : `
       <div class="card empty">
         ${logoChip(16, 70)}
         <div class="serif">${{
@@ -713,6 +827,8 @@ function renderLibrary() {
 
   wireTopbar(root);
   $$("[data-f]", root).forEach((b) => b.addEventListener("click", () => { libFilter = b.dataset.f; renderLibrary(); }));
+  $("#lib-era-toggle", root)?.addEventListener("click", () => { libEraView = !libEraView; renderLibrary(); });
+  $("#lib-share-stack", root)?.addEventListener("click", () => openShareCard({ kind: "wishliststack" }));
   $$("[data-book]", root).forEach((el) => el.addEventListener("click", () => openBookSheet(el.dataset.book)));
   $("[data-go-discover]", root)?.addEventListener("click", () => navigate("discover"));
 }
@@ -728,7 +844,11 @@ function entryBodyHTML(j) {
   const imgs = j.images?.length ? `<div class="imgs">${j.images.map((src) => `<img src="${src}" alt="">`).join("")}</div>` : "";
   return t + imgs;
 }
+function isLetterSealed(j) {
+  return j.kind === "letter" && j.unlockDate && new Date(j.unlockDate) > new Date();
+}
 function entryPreviewText(j, max = 130) {
+  if (isLetterSealed(j)) return `🔒 Sealed until ${fmtDateNice(j.unlockDate)}`;
   let text;
   if (j.html) {
     const tmp = document.createElement("div");
@@ -807,6 +927,34 @@ function refreshJournalList() {
   wireJournalEntryButtons();
 }
 
+/* Commonplace book: every "quote" entry, across every book, in one
+   continuous scroll — the thing a reader would actually want to reread
+   on its own, unlike the busier mixed-kind journal list. */
+function openCommonplaceBook() {
+  const quotes = S.journal
+    .filter((j) => j.kind === "quote" && !isLetterSealed(j))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const el = document.createElement("div");
+  el.className = "journal-fs";
+  el.innerHTML = `
+    <div class="jfs-top">
+      <button class="iconbtn" id="cb-close">${icon("x", { size: 16 })}</button>
+      <div class="serif" style="font-size:17px">Commonplace book</div>
+      <span></span>
+    </div>
+    <div class="jfs-page" style="padding:20px">
+      ${quotes.length ? quotes.map((q) => {
+        const book = S.books.find((b) => b.id === q.bookId);
+        return `<div style="margin-bottom:30px;padding-bottom:24px;border-bottom:1px solid var(--line)">
+          <p class="serif" style="font-size:19px;font-style:italic;line-height:1.5">❝ ${esc(entryPreviewText(q, 400))} ❞</p>
+          <div class="muted small" style="margin-top:8px">${book ? esc(book.t) + (book.a ? " — " + esc(book.a) : "") : "Freeform"} · ${fmtDateNice(q.createdAt)}</div>
+        </div>`;
+      }).join("") : `<div class="empty"><div class="serif">No quotes kept yet.</div><p>Save a favorite line from a book and it'll live here.</p></div>`}
+    </div>`;
+  document.body.appendChild(el);
+  $("#cb-close", el).addEventListener("click", () => el.remove());
+}
+
 function renderJournal() {
   const entries = journalFilteredEntries();
 
@@ -818,6 +966,9 @@ function renderJournal() {
         <button class="btn sm solid" id="j-new">${icon("plus", { size: 14 })} New entry</button>
       </div>
       <p class="muted" style="margin:-8px 0 14px">A private space for how books actually land — beyond the star rating.</p>
+      <div class="btn-row" style="margin:-6px 0 4px">
+        <button class="btn ghost sm" id="j-commonplace">${icon("bookmark", { size: 14 })} Commonplace book</button>
+      </div>
       <div class="search-head" style="margin-bottom:6px">
         <input id="j-search" placeholder="Find entries by book title or author…" value="${esc(journalBookQuery)}">
       </div>
@@ -833,6 +984,7 @@ function renderJournal() {
   wireTopbar(root);
   $("[data-back-home]", root)?.addEventListener("click", () => navigate("home"));
   $("#j-new")?.addEventListener("click", () => openJournalEditor());
+  $("#j-commonplace", root)?.addEventListener("click", openCommonplaceBook);
   $("#j-search", root).addEventListener("input", (e) => { journalBookQuery = e.target.value; refreshJournalList(); });
   $$("[data-jf]", root).forEach((b) => b.addEventListener("click", () => { journalFilter = b.dataset.jf; renderJournal(); }));
   updateJournalSuggestions();
@@ -842,6 +994,14 @@ function renderJournal() {
 /* ---------------- full-screen, Notion-style diary editor ---------------- */
 function openJournalEditor(opts = {}) {
   const { bookId = null, presetKind = null, entry = null } = opts;
+  if (entry && isLetterSealed(entry)) {
+    openSheet(`
+      <h2 style="text-align:center;margin-bottom:6px">${icon("sunrise", { size: 18 })} Still sealed</h2>
+      <p class="muted" style="text-align:center">This letter opens on ${fmtDateNice(entry.unlockDate)}. Worth the wait.</p>
+      <div class="btn-row" style="justify-content:center"><button class="btn solid" id="seal-ok">Okay</button></div>
+    `, (sheet) => $("#seal-ok", sheet).addEventListener("click", closeSheet));
+    return;
+  }
   let kind = entry ? entry.kind : (presetKind || "reflection");
   let chosenPrompt = entry ? entry.prompt : null;
   let selectedBookId = entry ? entry.bookId : bookId;
@@ -883,6 +1043,7 @@ function openJournalEditor(opts = {}) {
       ${prompts.length ? `<div class="prompt-pills jfs-prompts">
         ${prompts.map((p, i) => `<button data-prompt="${i}" class="${chosenPrompt === p ? "on" : ""}">${esc(p)}</button>`).join("")}
       </div>` : ""}
+      ${kind === "letter" ? `<div class="field" style="padding:0 20px"><span>Seal it until…</span><input type="date" id="jfs-unlock" value="${entry?.unlockDate ? entry.unlockDate.slice(0, 10) : ""}" min="${todayStr()}"></div>` : ""}
       <div class="jfs-page">
         <div id="jfs-editor" class="jfs-editor" contenteditable="true" data-placeholder="${kind === "quote" ? "The line you'd copy into a notebook…" : JOURNAL_KINDS.find((k) => k.id === kind).hint}">${initialContent}</div>
       </div>
@@ -959,15 +1120,16 @@ function openJournalEditor(opts = {}) {
       const plain = $("#jfs-editor", el).textContent.trim();
       const hasImage = /<img/i.test(html);
       if (!plain && !hasImage) { toast("A few words, or a photo — something to keep."); return; }
+      const unlockDate = kind === "letter" && $("#jfs-unlock", el)?.value ? new Date($("#jfs-unlock", el).value).toISOString() : null;
       if (isEdit) {
-        Object.assign(entry, { bookId: selectedBookId, kind, prompt: chosenPrompt, html, text: plain, images: [] });
+        Object.assign(entry, { bookId: selectedBookId, kind, prompt: chosenPrompt, html, text: plain, images: [], unlockDate });
         saveState(); closeEditor(); toast("Updated.");
       } else {
         const deep = kind === "analysis" || kind === "character";
-        S.journal.push({ id: uid(), bookId: selectedBookId, kind, prompt: chosenPrompt, html, text: plain, images: [], createdAt: new Date().toISOString() });
+        S.journal.push({ id: uid(), bookId: selectedBookId, kind, prompt: chosenPrompt, html, text: plain, images: [], unlockDate, createdAt: new Date().toISOString() });
         grantXP(deep ? XP_RULES.deepJournalEntry : XP_RULES.journalEntry, "Journal: " + kind);
         checkAchievements(); saveState(); closeEditor();
-        toast(kind === "quote" ? "Pressed between the pages." : "Noted, carefully.");
+        toast(kind === "letter" && unlockDate ? "Sealed. Future you says thanks." : kind === "quote" ? "Pressed between the pages." : "Noted, carefully.");
       }
       render();
     });
@@ -1024,6 +1186,25 @@ function openBacklog(b) {
 /* ================================================================
    BOOK DETAIL SHEET
 ================================================================ */
+/* A soft, cover-tinted glow behind the book on its detail page — reuses
+   the same color-extraction the share cards use. A small, deliberate
+   exception to the black/white/gray UI, contained to one decorative
+   element, never touching text or functional chrome. */
+function applyCoverHaloAccent(book, sheet) {
+  if (!book.cover || typeof themeStopsFromImage !== "function") return;
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = () => {
+    try {
+      const [stop] = themeStopsFromImage(img);
+      const halo = sheet.querySelector(".bd-hero .halo");
+      if (halo) halo.style.background = stop + "33"; // low alpha — a hint, not a takeover
+    } catch {}
+  };
+  img.onerror = () => {};
+  img.src = book.cover;
+}
+
 function openBookSheet(id) {
   const b = S.books.find((x) => x.id === id);
   if (!b) return;
@@ -1042,8 +1223,12 @@ function openBookSheet(id) {
         <span class="chip gold">${SHELF_DEFS.find(([k]) => k === b.shelf)?.[1] || b.shelf}</span>
         ${b.r ? `<span class="chip">★ ${b.r} community</span>` : ""}
         ${b.p ? `<span class="chip">${b.p} pages</span>` : ""}
+        ${b.rereadCount ? `<span class="chip">${icon("refresh", { size: 11 })} Reread ×${b.rereadCount}</span>` : ""}
+        ${b.borrowed ? `<span class="chip">${b.dueDate ? "Due back " + fmtDateNice(b.dueDate) : "Borrowed"}</span>` : ""}
         ${(b.g || []).slice(0, 2).map((g) => `<span class="chip">${GENRES.find((x) => x.id === g)?.label || g}</span>`).join("")}
       </div>
+      ${b.whyPickedUp ? `<p class="muted small" style="text-align:center;font-style:italic">"${esc(b.whyPickedUp)}"</p>` : ""}
+      ${b.becauseOf ? `<p class="muted small" style="text-align:center">Because of ${esc(b.becauseOf)}</p>` : ""}
     </div>
     ${b.b ? `<p class="muted" style="text-align:center;padding:4px 6px">${esc(b.b)}</p>` : ""}
 
@@ -1065,7 +1250,8 @@ function openBookSheet(id) {
 
     <div class="btn-row" style="justify-content:center">
       ${b.shelf === "reading" ? `<button class="btn solid" data-act="read">Start session</button>` : `<button class="btn solid" data-act="startbook">Start reading</button>`}
-      ${b.shelf !== "finished" ? `<button class="btn ghost" data-act="finish">Mark finished</button>` : `<button class="btn ghost" data-act="card">Share card</button>`}
+      ${b.shelf !== "finished" ? `<button class="btn ghost" data-act="finish">Mark finished</button>` : `<button class="btn ghost" data-act="reread">${icon("refresh", { size: 14 })} Reread this book</button>`}
+      ${b.shelf === "finished" ? `<button class="btn ghost" data-act="card">Share card</button><button class="btn ghost" data-act="recommend">Recommend it</button>` : ""}
       <button class="btn ghost" data-act="fav">${icon("heart", { size: 14, filled: b.fav })} ${b.fav ? "Favorited" : "Favorite"}</button>
       <button class="btn ghost" data-act="note">${icon("feather", { size: 14 })} Journal this book</button>
       <button class="btn quiet" data-act="edit">Edit</button>
@@ -1108,13 +1294,19 @@ function openBookSheet(id) {
     $$("[data-act]", sheet).forEach((btn) => btn.addEventListener("click", () => {
       const act = btn.dataset.act;
       if (act === "read") { closeSheet(); startTimer(b.id); navigate("timer"); }
-      if (act === "startbook") { moveShelf(b, "reading"); closeSheet(); openBookSheet(b.id); toast("On the nightstand."); }
+      if (act === "startbook") { moveShelf(b, "reading"); closeSheet(); openFirstLinePrompt(b); }
       if (act === "finish") { closeSheet(); finishBookFlow(b); }
+      if (act === "reread") {
+        if (confirm(`Reread "${b.t}" from the start? Your rating and review will be kept in its history.`)) {
+          startReread(b); closeSheet(); openBookSheet(b.id); toast("Back on the nightstand, page one.");
+        }
+      }
       if (act === "fav") { b.fav = !b.fav; if (b.fav) learnFrom(b, "love"); saveState(); openBookSheet(b.id); }
       if (act === "note") { closeSheet(); openJournalEditor({ bookId: b.id }); }
       if (act === "edit") { closeSheet(); openManualAdd(b); }
       if (act === "drop") { moveShelf(b, "dropped"); closeSheet(); render(); toast("Dropped. Life's too short — no guilt."); }
       if (act === "card") { closeSheet(); openShareCard({ kind: "book", book: b }); }
+      if (act === "recommend") { closeSheet(); openShareCard({ kind: "recommend", book: b }); }
       if (act === "backlog") { closeSheet(); openBacklog(b); }
     }));
     $("#see-all-journal", sheet)?.addEventListener("click", () => { closeSheet(); journalFilter = "all"; journalBookQuery = b.t; navigate("journal"); });
@@ -1149,6 +1341,7 @@ function openBookSheet(id) {
       });
     });
     resolveCover(b);
+    applyCoverHaloAccent(b, sheet);
   });
 }
 
@@ -1193,6 +1386,7 @@ function startTimer(bookId) {
   if (ex && ex.bookId !== bookId) { toast("Finish your open session first."); return; }
   if (!ex) {
     setTimer({ bookId, last: Date.now(), acc: 0, paused: false, mood: null, notified60: false });
+    haptic();
     maybeAskNotificationPermission();
     updateCtaState();
   }
@@ -1230,6 +1424,39 @@ function maybeAskNotificationPermission() {
   });
 }
 function canNotify() { return notifSupported() && Notification.permission === "granted"; }
+
+async function checkResumeNudge() {
+  if (!canNotify()) return;
+  const book = mostRecentReadingBook();
+  if (!book) return; // nothing to resume
+
+  const last = lastSessionDate(); // "YYYY-MM-DD" or null
+  const daysSince = last
+    ? Math.floor((Date.now() - new Date(last + "T00:00:00").getTime()) / 86400000)
+    : Math.floor((Date.now() - new Date(S.profile.joinedAt).getTime()) / 86400000);
+  if (daysSince < 5) return;
+
+  const hour = new Date().getHours();
+  if (hour < 8 || hour >= 22) return; // quiet hours
+
+  // cooldown: don't repeat this every single app open during the same idle
+  // stretch — wait at least 3 days between nudges if they still haven't returned
+  if (S.lastResumeNudgeAt) {
+    const daysSinceNudge = (Date.now() - new Date(S.lastResumeNudgeAt).getTime()) / 86400000;
+    if (daysSinceNudge < 3) return;
+  }
+
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    reg.showNotification("Resume reading?", {
+      tag: "dogeared-resume", icon: "icons/icon-192.png", badge: "icons/icon-192.png",
+      body: `It's been a few days — ${book.t} is right where you left it.`,
+      data: { bookId: book.id },
+    });
+    S.lastResumeNudgeAt = new Date().toISOString();
+    saveState();
+  } catch {}
+}
 
 async function updateSessionNotification(force = false) {
   if (!canNotify()) return;
@@ -1331,7 +1558,14 @@ document.addEventListener("visibilitychange", () => {
 
 /* handle taps on notification actions, whether the app was already open
    (message from the service worker) or just cold-launched (URL param) */
-function handleNotificationAction(action) {
+function handleNotificationAction(action, data) {
+  if (action === "open" && data?.bookId) {
+    // resume-reading nudge: land on the Timer tab, which already shows a
+    // "Ready to return to your book?" prompt for anything on the reading
+    // shelf — no auto-starting a session on the user's behalf.
+    navigate("timer");
+    return;
+  }
   const t = getTimer();
   if (!t) return;
   if (action === "pause") {
@@ -1347,14 +1581,25 @@ function handleNotificationAction(action) {
 }
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", (e) => {
-    if (e.data?.type === "notification-action") handleNotificationAction(e.data.action);
+    if (e.data?.type === "notification-action") handleNotificationAction(e.data.action, e.data.data);
   });
 }
 {
-  const notifParam = new URLSearchParams(location.search).get("notif");
+  const params = new URLSearchParams(location.search);
+  const notifParam = params.get("notif");
   if (notifParam) {
+    const bookId = params.get("book");
     history.replaceState(null, "", location.pathname);
-    window.addEventListener("load", () => setTimeout(() => handleNotificationAction(notifParam), 400));
+    window.addEventListener("load", () => setTimeout(() => handleNotificationAction(notifParam, bookId ? { bookId } : null), 400));
+  }
+  const shortcutParam = params.get("shortcut");
+  if (shortcutParam) {
+    history.replaceState(null, "", location.pathname);
+    window.addEventListener("load", () => setTimeout(() => {
+      if (!S.profile) return; // onboarding takes priority
+      if (shortcutParam === "timer") navigate("timer");
+      else if (shortcutParam === "journal") { navigate("journal"); openJournalEditor({}); }
+    }, 450));
   }
 }
 
@@ -1392,15 +1637,33 @@ function renderTimer() {
   const book = S.books.find((b) => b.id === t.bookId);
   if (!book) { setTimer(null); renderTimer(); return; }
 
+  const bookPct = book.p ? Math.max(0, Math.min(1, (book.currentPage || 0) / book.p)) : 0;
+  const R_OUT = 122, R_IN = 102;
+  const circOut = 2 * Math.PI * R_OUT, circIn = 2 * Math.PI * R_IN;
+
   root.innerHTML = `${topbar()}
     <div class="view timer-page ${t.paused ? "paused" : ""}">
       <div class="card eared timer-hero">
-        <div class="breath">${logoChip(0, 90)}</div>
+        <div class="timer-rings">
+          <svg width="260" height="260" viewBox="0 0 260 260">
+            <circle class="ring-bg-o" cx="130" cy="130" r="${R_OUT}" fill="none" stroke-width="7"/>
+            <circle class="ring-fg-o" cx="130" cy="130" r="${R_OUT}" fill="none" stroke-width="7"
+              stroke-dasharray="${circOut}" stroke-dashoffset="${circOut * (1 - bookPct)}"/>
+            <circle class="ring-bg-i" cx="130" cy="130" r="${R_IN}" fill="none" stroke-width="7"/>
+            <circle class="ring-fg-i" id="ring-session" cx="130" cy="130" r="${R_IN}" fill="none" stroke-width="7"
+              stroke-dasharray="${circIn}" stroke-dashoffset="${circIn}"/>
+          </svg>
+          <div class="breath">${logoChip(0, 82)}</div>
+        </div>
         <div class="time" id="tt">0:00</div>
-        <div class="bl">${esc(book.t)} · from page ${book.currentPage || 0}</div>
+        <div class="bl">${esc(book.t)} · from page ${book.currentPage || 0}${book.p ? ` <span class="muted">(${Math.round(bookPct * 100)}% through)</span>` : ""}</div>
         <div class="eyebrow" style="margin-top:18px">How's it feel?</div>
         <div class="mood-row">
           ${SESSION_MOODS.map(([em, l]) => `<button data-mood="${em}" title="${l}" class="${t.mood === em ? "on" : ""}">${em}</button>`).join("")}
+        </div>
+        <div class="eyebrow" style="margin-top:14px">Where are you?</div>
+        <div class="mood-row">
+          ${SESSION_LOCATIONS.map(([em, l]) => `<button data-loc="${em}" title="${l}" class="${t.location === em ? "on" : ""}">${em}</button>`).join("")}
         </div>
         <div class="btn-row" style="justify-content:center;margin-top:22px">
           <button class="btn ghost" id="tp">${t.paused ? "Resume" : "Pause"}</button>
@@ -1415,11 +1678,18 @@ function renderTimer() {
   wireTopbar(root);
 
   const tt = $("#tt");
+  const ringSession = $("#ring-session");
   const tick = () => {
     const c = getTimer(); if (!c) return;
     const s = Math.floor(elapsedMs(c) / 1000);
     const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
     tt.textContent = h ? `${h}:${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}` : `${m}:${String(ss).padStart(2, "0")}`;
+    // inner ring: fraction of the CURRENT hour elapsed — one full lap per 60
+    // minutes of session time, wrapping naturally into a new lap after that
+    if (ringSession) {
+      const fracOfHour = (s % 3600) / 3600;
+      ringSession.style.strokeDashoffset = circIn * (1 - fracOfHour);
+    }
   };
   tick(); tickInt = setInterval(tick, 1000);
 
@@ -1427,14 +1697,18 @@ function renderTimer() {
     const c = getTimer(); c.mood = c.mood === b.dataset.mood ? null : b.dataset.mood; setTimer(c);
     $$("[data-mood]", root).forEach((x) => x.classList.toggle("on", x.dataset.mood === c.mood));
   }));
+  $$("[data-loc]", root).forEach((b) => b.addEventListener("click", () => {
+    const c = getTimer(); c.location = c.location === b.dataset.loc ? null : b.dataset.loc; setTimer(c);
+    $$("[data-loc]", root).forEach((x) => x.classList.toggle("on", x.dataset.loc === c.location));
+  }));
   $("#tp").addEventListener("click", () => {
     const c = getTimer();
     if (c.paused) { c.paused = false; c.last = Date.now(); } else { c.acc += Date.now() - c.last; c.paused = true; }
-    setTimer(c); renderTimer();
+    setTimer(c); renderTimer(); haptic();
     updateSessionNotification();
   });
   $("#tq").addEventListener("click", () => openJournalEditor({ bookId: book.id, presetKind: "quote" }));
-  $("#tf").addEventListener("click", () => finishSessionFlow(book));
+  $("#tf").addEventListener("click", () => { haptic(18); finishSessionFlow(book); });
 }
 
 function finishSessionFlow(book) {
@@ -1448,7 +1722,14 @@ function finishSessionFlow(book) {
     <p class="muted">${fmtHM(minutes)} with <em>${esc(book.t)}</em>.</p>
     <label class="field" style="margin-top:16px"><span>Where did you land? — <strong id="pl">page ${startPage}</strong></span>
       <input type="range" id="ps" min="${startPage}" max="${maxPage}" value="${startPage}"></label>
+    <div class="btn-row" style="margin:-4px 0 10px">
+      ${[10, 25, 50].map((n) => `<button class="btn ghost sm" data-quickpage="${n}">+${n}</button>`).join("")}
+    </div>
     <label class="field"><span>Or type it</span><input type="number" id="pn" min="${startPage}" max="${maxPage}" value="${startPage}"></label>
+    <div class="eyebrow" style="margin-top:14px">How'd that sit-down feel?</div>
+    <div class="mood-row" id="post-mood-row">
+      ${SESSION_MOODS.map(([em, l]) => `<button data-postmood="${em}" title="${l}">${em}</button>`).join("")}
+    </div>
     <div class="btn-row">
       <button class="btn solid" id="fs-save">Save session</button>
       <button class="btn quiet" id="fs-x" style="color:var(--ember)">Discard</button>
@@ -1458,6 +1739,13 @@ function finishSessionFlow(book) {
     const sync = (v) => { v = Math.min(maxPage, Math.max(startPage, +v || startPage)); ps.value = v; pn.value = v; pl.textContent = "page " + v; };
     ps.addEventListener("input", () => sync(ps.value));
     pn.addEventListener("input", () => sync(pn.value));
+    $$("[data-quickpage]", sheet).forEach((btn) => btn.addEventListener("click", () => sync(startPage + (+btn.dataset.quickpage))));
+
+    let postMood = null;
+    $$("[data-postmood]", sheet).forEach((btn) => btn.addEventListener("click", () => {
+      postMood = postMood === btn.dataset.postmood ? null : btn.dataset.postmood;
+      $$("[data-postmood]", sheet).forEach((x) => x.classList.toggle("on", x.dataset.postmood === postMood));
+    }));
 
     $("#fs-save", sheet).addEventListener("click", () => {
       const endPage = +ps.value;
@@ -1467,7 +1755,7 @@ function finishSessionFlow(book) {
 
       S.sessions.push({
         id: uid(), bookId: book.id, date: todayStr(), minutes,
-        startPage, endPage, mood: t.mood, createdAt: new Date().toISOString(),
+        startPage, endPage, mood: t.mood, postMood, location: t.location || null, createdAt: new Date().toISOString(),
       });
       if (endPage > (book.currentPage || 0)) book.currentPage = endPage;
       setTimer(null);
@@ -1515,6 +1803,21 @@ function showSummary({ book, minutes, pagesRead, xp, finished, fresh, prevStreak
       <div><span class="xp-pop">${icon("sparkle", { size: 16 })} +${Math.round(xp)} XP</span></div>
       ${fresh.map((a) => `<div class="ach-pop"><span class="chip gold" style="font-size:13px;padding:8px 16px">${icon(a.ic, { size: 15 })} Achievement — ${a.t}</span></div>`).join("")}
       ${finished ? `<p class="muted" style="margin-top:18px">"${esc(book.t)}" joins your finished shelf. Rate it while it's still humming.</p>` : ""}
+      ${(() => {
+        if (!finished) return "";
+        window.__summaryNextPick = recommendationFeed(1)[0] || null;
+        const next = window.__summaryNextPick;
+        if (!next) return "";
+        return `<div class="card eared" style="margin-top:14px;text-align:left;display:flex;gap:12px;align-items:center" id="sum-next-card">
+          ${next.cover ? `<img class="cover" src="${next.cover}" alt="">` : genCoverHTML(next, "cover")}
+          <div style="flex:1;min-width:0">
+            <div class="muted small">What next?</div>
+            <div class="serif" style="font-size:16px;margin-top:2px">${esc(next.t)}</div>
+            <div class="muted small">${esc(next.a || "")}</div>
+          </div>
+          <button class="btn ghost sm" id="sum-next-start">Start</button>
+        </div>`;
+      })()}
       <div class="btn-row" style="justify-content:center;margin-top:26px">
         <button class="btn solid" id="sum-share">Share this</button>
         ${finished ? `<button class="btn ghost" id="sum-rate">Rate the book</button>` : ""}
@@ -1523,6 +1826,15 @@ function showSummary({ book, minutes, pagesRead, xp, finished, fresh, prevStreak
     </div>`;
   document.body.appendChild(el);
 
+  $("#sum-next-start", el)?.addEventListener("click", () => {
+    const next = window.__summaryNextPick;
+    if (!next) return;
+    const nb = addBookFromCatalog(next, "reading");
+    el.remove();
+    navigate("timer");
+    startTimer(nb.id);
+    renderTimer();
+  });
   $("#sum-done", el).addEventListener("click", () => { el.remove(); navigate("home"); });
   $("#sum-rate", el)?.addEventListener("click", () => { el.remove(); navigate("library"); openBookSheet(book.id); });
   $("#sum-share", el).addEventListener("click", () => {
@@ -1610,6 +1922,31 @@ function resolveCardData(cfg) {
       ],
     };
   }
+  if (cfg.kind === "recommend") {
+    const b = cfg.book;
+    return {
+      kicker: "A BOOK I'D RECOMMEND", dateStr: fmtDateForCard(),
+      title: b.t, subtitle: b.a, coverUrl: b.cover, book: b,
+      stars: b.rating || null,
+      stats: [
+        [b.p || "—", "pages"],
+        [(b.g || []).map((gid) => GENRES.find((x) => x.id === gid)?.label).filter(Boolean)[0] || "—", "genre"],
+      ],
+    };
+  }
+  if (cfg.kind === "wishliststack") {
+    const wishlist = S.books.filter((b) => b.shelf === "wishlist").sort((a, b) => (b.addedAt || "").localeCompare(a.addedAt || ""));
+    return {
+      kicker: "UP NEXT", dateStr: fmtDateForCard(),
+      title: `${wishlist.length} book${wishlist.length === 1 ? "" : "s"} queued up`,
+      subtitle: "", coverUrl: null, book: null,
+      shelfBooks: wishlist.slice(0, 12),
+      stats: [
+        [wishlist.length, "on the list"],
+        [new Set(wishlist.flatMap((b) => b.g || [])).size, "genres"],
+      ],
+    };
+  }
   if (cfg.kind === "monthwrap") {
     const ms = cfg.ms, anchor = ms.topBook || null;
     const hours = Math.round(ms.minutes / 60);
@@ -1674,12 +2011,17 @@ function resolveCardData(cfg) {
   }
   if (cfg.kind === "weekstats") {
     const streak = computeStreak();
+    const recentBadges = ACHIEVEMENTS
+      .filter((a) => S.unlocked[a.id])
+      .sort((a, b) => (S.unlocked[b.id] || "").localeCompare(S.unlocked[a.id] || "")) // most recently unlocked first
+      .slice(0, 8)
+      .map((a) => a.ic);
     return {
       kicker: "WEEKLY REPORT", dateStr: weekRangeLabel(),
       title: `${pagesThisWeek()} pages this week`,
       subtitle: sessionsThisWeek() ? `across ${sessionsThisWeek()} session${sessionsThisWeek() === 1 ? "" : "s"}` : "a quieter week — that's alright",
       coverUrl: null, book: null, shelfBooks: booksForShelf(12),
-      badges: ACHIEVEMENTS.filter((a) => S.unlocked[a.id]).map((a) => a.ic),
+      badges: recentBadges,
       stats: [
         [pagesThisWeek(), "pages this week"],
         [fmtHM(minutesThisWeek()), "time this week"],
@@ -1710,8 +2052,8 @@ function openShareCard(cfg) {
   // pulled from that exact cover makes the card feel personalized. Weekly
   // stats, the monthly wrap, and the lifetime card stay grayscale, since
   // they aren't about one cover.
-  const bookAnchored = cfg.kind === "book" || cfg.kind === "session"
-    || (cfg.kind === "history" && ["book", "session"].includes(cfg.data?.kind));
+  const bookAnchored = cfg.kind === "book" || cfg.kind === "session" || cfg.kind === "recommend"
+    || (cfg.kind === "history" && ["book", "session", "recommend"].includes(cfg.data?.kind));
   let styleDefs = bookAnchored
     ? [["theme", "Cover gradient"], ["gradient", "Classic"], ["transparent", "Transparent"]]
     : [["gradient", "Classic"], ["transparent", "Transparent"]];
@@ -2043,6 +2385,24 @@ function accountSectionHTML() {
     <button class="btn ghost block" id="acct-google">${GOOGLE_G_SVG} Sign in with Google</button>`;
 }
 
+function yearlyGoalHTML() {
+  const goal = S.profile.yearlyGoal || 24;
+  const done = booksFinishedThisYear();
+  const pct = Math.min(100, Math.round((done / goal) * 100));
+  const now = new Date();
+  const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
+  const yearLength = (now.getFullYear() % 4 === 0 && (now.getFullYear() % 100 !== 0 || now.getFullYear() % 400 === 0)) ? 366 : 365;
+  const pace = done > 0 ? Math.round((done / dayOfYear) * yearLength) : null;
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+      <span class="serif" style="font-size:26px">${done} <span class="muted" style="font-size:16px;font-family:var(--font-b)">of ${goal} books</span></span>
+      <span class="muted small">${pct}%</span>
+    </div>
+    <div class="xpbar"><i style="width:${pct}%"></i></div>
+    ${pace !== null ? `<p class="muted small" style="margin-top:9px">On this pace, you'll finish around ${pace} this year.</p>` : `<p class="muted small" style="margin-top:9px">Finish your first book of the year to see your pace.</p>`}
+  `;
+}
+
 function renderProfile() {
   const g = globalStats();
   const lv = levelForXP(S.xp);
@@ -2083,6 +2443,15 @@ function renderProfile() {
         <div class="pillstat"><div class="n">${Math.round(g.totalMin / 60)}h</div><div class="l">total time</div></div>
         <div class="pillstat"><div class="n">${g.totalPages.toLocaleString()}</div><div class="l">pages read</div></div>
         <div class="pillstat"><div class="n">${icon("flame", { size: 16 })} ${g.bestStreak}</div><div class="l">best streak</div></div>
+      </div>
+      ${(S.streakFreezes || 0) > 0 ? `<p class="muted small" style="text-align:center;margin:-10px 0 14px">🧊 ${S.streakFreezes} streak freeze${S.streakFreezes === 1 ? "" : "s"} banked — one missed day won't break your streak.</p>` : ""}
+
+      <div class="card eared rise d1" id="pf-yearly-goal">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span class="eyebrow" style="margin:0">This year</span>
+          <button class="iconbtn" id="pf-edit-yearly" title="Change goal">${icon("pen", { size: 13 })}</button>
+        </div>
+        ${yearlyGoalHTML()}
       </div>
 
       <div class="card rise d2">
@@ -2147,6 +2516,12 @@ function renderProfile() {
           <input type="file" id="pf-file" accept="application/json" class="hidden">
           <button class="btn quiet sm" id="pf-reset" style="color:var(--ember)">Reset everything</button>
         </div>
+        <hr class="dash">
+        <p class="muted small">Coming from Goodreads? Export your library there (My Books → Import/Export) and bring it in here.</p>
+        <div class="btn-row">
+          <button class="btn ghost sm" id="pf-import-gr">Import from Goodreads</button>
+          <input type="file" id="pf-gr-file" accept=".csv" class="hidden">
+        </div>
       </div>
     </div>`;
 
@@ -2154,6 +2529,7 @@ function renderProfile() {
   $("[data-share-wrap]", root).addEventListener("click", () => openShareCard({ kind: "weekstats" }));
   $("#pf-avatar-btn", root).addEventListener("click", openAvatarPicker);
   $("#pf-name-btn", root).addEventListener("click", openRenameSheet);
+  $("#pf-edit-yearly", root)?.addEventListener("click", openYearlyGoalSheet);
   $("#acct-google", root)?.addEventListener("click", signInWithGoogle);
   $("#acct-signout", root)?.addEventListener("click", signOutCloud);
   $("#acct-retry", root)?.addEventListener("click", () => pushCloudData(false));
@@ -2182,6 +2558,39 @@ function renderProfile() {
     if (!confirm("Erase your entire reading life on this device? Export a backup first if unsure.")) return;
     localStorage.removeItem(DB_KEY); localStorage.removeItem(TIMER_KEY);
     location.reload();
+  });
+  $("#pf-import-gr", root).addEventListener("click", () => $("#pf-gr-file", root).click());
+  $("#pf-gr-file", root).addEventListener("change", (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let rows;
+      try { rows = parseGoodreadsCSV(reader.result); }
+      catch { rows = null; }
+      if (!rows) { toast("That doesn't look like a Goodreads export CSV."); return; }
+      if (!rows.length) { toast("No books found in that file."); return; }
+      const finished = rows.filter((r) => r.shelf === "read").length;
+      const reading = rows.filter((r) => r.shelf === "currently-reading").length;
+      const wishlist = rows.length - finished - reading;
+      openSheet(`
+        <h2 style="text-align:center;margin-bottom:6px">Import ${rows.length} book${rows.length === 1 ? "" : "s"}?</h2>
+        <p class="muted" style="text-align:center">${finished} finished · ${reading} reading · ${wishlist} on your wishlist. Already-imported titles are skipped automatically.</p>
+        <p class="muted small" style="text-align:center">Genres aren't in the Goodreads export — Discover will learn your taste again as you read.</p>
+        <div class="btn-row" style="justify-content:center">
+          <button class="btn solid" id="gr-confirm">Import</button>
+          <button class="btn ghost" id="gr-cancel">Cancel</button>
+        </div>
+      `, (sheet) => {
+        $("#gr-cancel", sheet).addEventListener("click", closeSheet);
+        $("#gr-confirm", sheet).addEventListener("click", () => {
+          const result = importGoodreadsRows(rows);
+          closeSheet(); render();
+          toast(`Imported ${result.imported}${result.skipped ? `, skipped ${result.skipped} already here` : ""}.`);
+        });
+      });
+    };
+    reader.readAsText(f);
+    e.target.value = "";
   });
   $("#pf-edit", root).addEventListener("click", openTasteEditor);
 }
@@ -2245,6 +2654,27 @@ function openRenameSheet() {
       toast("Updated.");
     });
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") $("#rn-save", sheet).click(); });
+  });
+}
+
+function openYearlyGoalSheet() {
+  let goal = S.profile.yearlyGoal || 24;
+  openSheet(`
+    <h2 style="text-align:center;margin-bottom:6px">A goal for this year?</h2>
+    <p class="muted" style="text-align:center">However many feels right — you can change it anytime.</p>
+    <div class="goal-dial" style="margin-top:14px"><div class="n" id="yg-n">${goal}</div><div class="u">books this year</div></div>
+    <input type="range" id="yg-range" min="1" max="100" step="1" value="${goal}" style="max-width:280px;margin:10px auto">
+    <div class="btn-row" style="justify-content:center"><button class="btn solid" id="yg-save">Save</button></div>
+  `, (sheet) => {
+    $("#yg-range", sheet).addEventListener("input", (e) => {
+      goal = +e.target.value;
+      $("#yg-n", sheet).textContent = goal;
+    });
+    $("#yg-save", sheet).addEventListener("click", () => {
+      S.profile.yearlyGoal = goal;
+      saveState(); closeSheet(); render();
+      toast("Yearly goal updated.");
+    });
   });
 }
 
@@ -2320,6 +2750,7 @@ function closeTopmostOverlay() {
   try {
     if (tryClick(".sheet-backdrop .close-x")) return true;
     if (tryClick(".journal-fs #jfs-close")) return true;
+    if (tryClick(".journal-fs #cb-close")) return true;
     if (tryClick(".wrap-viewer .wrap-close")) return true;
     if (tryClick(".summary #sum-done")) return true;
   } catch {}
@@ -2369,6 +2800,8 @@ function boot() {
   if (getTimer()) navigate("timer");
   else navigate("home");
   startHeartbeat();
+  checkStreakFreeze();
+  checkResumeNudge();
   // extra buffer states — some Android back-gesture implementations can
   // consume more than one history entry per swipe
   pushBackGuard();

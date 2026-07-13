@@ -11,5 +11,21 @@
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
     { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Resume reading",
+      "short_name": "Resume",
+      "description": "Jump straight to your current book's timer",
+      "url": "./index.html?shortcut=timer",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "New journal entry",
+      "short_name": "Journal",
+      "description": "Jot a quick reflection or quote",
+      "url": "./index.html?shortcut=journal",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
   ]
 }

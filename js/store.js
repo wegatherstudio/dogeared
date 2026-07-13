@@ -25,6 +25,11 @@ const defaultState = () => ({
   remoteCatalog: [], // books discovered live via Open Library, merged into the rec pool
   readerProfile: null, // { weekKey, text, generatedAt } — a locally-computed reading-habits summary
   settings: { theme: "auto", notificationsAsked: false },
+  streakFreezes: 0,        // earned every 7-day streak milestone; auto-covers one missed day
+  usedFreezeDates: [],     // "YYYY-MM-DD" dates already covered by a freeze (idempotency)
+  lastFreezeMilestone: 0,  // highest streak length a freeze has already been awarded for
+  lastResumeNudgeAt: null, // ISO timestamp — so the 5-day idle nudge doesn't repeat every app open
+  lastDroppedNudgeAt: null, // ISO timestamp — gentle dropped-book resurface, at most every 14 days
 });
 
 let S = loadState();
@@ -39,6 +44,7 @@ function loadState() {
       settings: Object.assign({ theme: "auto", notificationsAsked: false }, s.settings),
       wrapsViewed: Object.assign({}, s.wrapsViewed),
       wrapBannerShownAt: Object.assign({}, s.wrapBannerShownAt),
+      profile: s.profile ? Object.assign({ yearlyGoal: 24 }, s.profile) : null,
       shareHistory: Array.isArray(s.shareHistory) ? s.shareHistory : [],
       remoteCatalog: Array.isArray(s.remoteCatalog) ? s.remoteCatalog : [],
       readerProfile: s.readerProfile || null,
@@ -86,14 +92,45 @@ function pagesByDate() {
   return map;
 }
 
-/* streak: a day counts with ≥5 min; today pending doesn't break it */
+/* streak: a day counts with ≥5 min; today pending doesn't break it.
+   A date in usedFreezeDates also counts, as if that day had been active —
+   the decision to actually spend a freeze happens elsewhere (see
+   checkStreakFreeze), this just reads whatever's already been decided. */
 function computeStreak() {
   const map = minutesByDate();
-  const q = (d) => (map[todayStr(d)] || 0) >= 5;
+  const covered = (d) => (map[todayStr(d)] || 0) >= 5 || S.usedFreezeDates.includes(todayStr(d));
   let d = new Date(), n = 0;
-  if (!q(d)) d.setDate(d.getDate() - 1);
-  while (q(d)) { n++; d.setDate(d.getDate() - 1); }
+  if (!covered(d)) d.setDate(d.getDate() - 1);
+  while (covered(d)) { n++; d.setDate(d.getDate() - 1); }
   return n;
+}
+/* Called once per app boot / heartbeat tick. Two jobs:
+   1. Award a freeze every 7-day streak milestone, once each.
+   2. If yesterday would have broken an otherwise-live streak and a freeze
+      is available, spend one automatically to cover it — quiet, no
+      confirmation needed, matching the app's low-pressure tone. */
+function checkStreakFreeze() {
+  const map = minutesByDate();
+  const streak = computeStreak();
+  if (streak > 0 && streak % 7 === 0 && streak > S.lastFreezeMilestone) {
+    S.lastFreezeMilestone = streak;
+    S.streakFreezes = (S.streakFreezes || 0) + 1;
+    saveState();
+    toast("A 7-day streak earned you a freeze — one missed day won't break it. 🧊");
+    return;
+  }
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  const yStr = todayStr(y);
+  const yesterdayMissed = (map[yStr] || 0) < 5;
+  const alreadyFrozen = S.usedFreezeDates.includes(yStr);
+  const dayBefore = new Date(y); dayBefore.setDate(dayBefore.getDate() - 1);
+  const hadLiveStreakBefore = (map[todayStr(dayBefore)] || 0) >= 5 || S.usedFreezeDates.includes(todayStr(dayBefore));
+  if (yesterdayMissed && !alreadyFrozen && hadLiveStreakBefore && (S.streakFreezes || 0) > 0) {
+    S.usedFreezeDates.push(yStr);
+    S.streakFreezes -= 1;
+    saveState();
+    toast("Used a streak freeze to keep yesterday covered.");
+  }
 }
 function bestStreak() {
   const days = Object.keys(minutesByDate()).filter((k) => minutesByDate()[k] >= 5).sort();
@@ -107,6 +144,65 @@ function bestStreak() {
     prev = d;
   }
   return best;
+}
+
+function lastSessionDate() {
+  if (!S.sessions.length) return null;
+  return S.sessions.reduce((latest, s) => (!latest || s.date > latest ? s.date : latest), null);
+}
+function mostRecentReadingBook() {
+  const reading = S.books.filter((b) => b.shelf === "reading");
+  if (!reading.length) return null;
+  const lastActivity = (b) => {
+    const sessions = S.sessions.filter((s) => s.bookId === b.id);
+    const lastSession = sessions.reduce((latest, s) => (!latest || s.date > latest ? s.date : latest), null);
+    return lastSession || b.startedAt || b.addedAt || "";
+  };
+  return reading.slice().sort((a, b) => lastActivity(b).localeCompare(lastActivity(a)))[0];
+}
+
+/* Occasionally resurface one dropped book — "still curious about this
+   one?" rather than a guilt trip. At most once every 14 days. */
+function droppedBookNudge() {
+  const dropped = S.books.filter((b) => b.shelf === "dropped");
+  if (!dropped.length) return null;
+  if (S.lastDroppedNudgeAt) {
+    const days = (Date.now() - new Date(S.lastDroppedNudgeAt).getTime()) / 86400000;
+    if (days < 14) return null;
+  }
+  const pick = dropped[Math.floor(Math.random() * dropped.length)];
+  S.lastDroppedNudgeAt = new Date().toISOString();
+  saveState();
+  return pick;
+}
+
+function booksFinishedThisYear() {
+  const year = new Date().getFullYear();
+  return S.books.filter((b) => b.shelf === "finished" && b.finishedAt && new Date(b.finishedAt).getFullYear() === year).length;
+}
+
+function onThisDayMemory() {
+  const now = new Date();
+  const mm = now.getMonth(), dd = now.getDate(), thisYear = now.getFullYear();
+  const sameDay = (dateStr) => {
+    const d = new Date(dateStr);
+    return d.getMonth() === mm && d.getDate() === dd && d.getFullYear() < thisYear;
+  };
+  const finishMatches = S.books
+    .filter((b) => b.finishedAt && sameDay(b.finishedAt))
+    .sort((a, b) => new Date(b.finishedAt).getFullYear() - new Date(a.finishedAt).getFullYear());
+  if (finishMatches.length) {
+    const b = finishMatches[0];
+    return { type: "finish", book: b, yearsAgo: thisYear - new Date(b.finishedAt).getFullYear() };
+  }
+  const sessionMatches = S.sessions
+    .filter((s) => sameDay(s.date))
+    .sort((a, b) => new Date(b.date).getFullYear() - new Date(a.date).getFullYear());
+  for (const s of sessionMatches) {
+    const book = S.books.find((b) => b.id === s.bookId);
+    if (book) return { type: "session", book, yearsAgo: thisYear - new Date(s.date).getFullYear() };
+  }
+  return null;
 }
 
 function globalStats() {
@@ -339,6 +435,7 @@ function addBookFromCatalog(cb, shelf) {
     shelf, addedAt: new Date().toISOString(),
     startedAt: shelf === "reading" ? new Date().toISOString() : null,
     finishedAt: null, rating: 0, review: "", currentPage: 0, fav: false,
+    format: "physical", whyPickedUp: "", borrowed: false, dueDate: null,
   };
   S.books.push(b);
   learnFrom(cb, shelf === "reading" ? "start" : "save");
@@ -356,6 +453,26 @@ function moveShelf(book, shelf) {
     grantXP(XP_RULES.finishBook, `Finished ${book.t}`);
     learnFrom(book, "finish");
   }
+  saveState();
+}
+
+/* Reread: archive the prior read-through (finish date, rating, review) onto
+   the book's readHistory, then send it back to the reading shelf starting
+   from page 0 — a fresh pass with its own sessions and its own finish. */
+function startReread(book) {
+  book.readHistory = book.readHistory || [];
+  book.readHistory.push({
+    finishedAt: book.finishedAt || null,
+    rating: book.rating || null,
+    review: book.review || null,
+  });
+  book.rereadCount = (book.rereadCount || 0) + 1;
+  book.shelf = "reading";
+  book.startedAt = new Date().toISOString();
+  book.finishedAt = null;
+  book.rating = null;
+  book.review = null;
+  book.currentPage = 0;
   saveState();
 }
 
@@ -611,6 +728,84 @@ function recordShareHistory(entry) {
   S.shareHistory.unshift({ id: uid(), ts: new Date().toISOString(), ...entry });
   if (S.shareHistory.length > 30) S.shareHistory = S.shareHistory.slice(0, 30);
   saveState();
+}
+
+/* ---------------- CSV import (Goodreads export format) ---------------- */
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = "", inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i], next = text[i + 1];
+    if (inQuotes) {
+      if (c === '"' && next === '"') { field += '"'; i++; }
+      else if (c === '"') { inQuotes = false; }
+      else field += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ",") { row.push(field); field = ""; }
+      else if (c === "\r") { /* skip, \n handles the line break */ }
+      else if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+      else field += c;
+    }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows.filter((r) => !(r.length === 1 && r[0] === ""));
+}
+function parseGoodreadsCSV(text) {
+  const rows = parseCSV(text);
+  if (!rows.length) return [];
+  const headers = rows[0].map((h) => h.trim());
+  const idx = (name) => headers.indexOf(name);
+  const iTitle = idx("Title"), iAuthor = idx("Author"),
+    iRating = idx("My Rating"), iAvgRating = idx("Average Rating"), iPages = idx("Number of Pages"),
+    iYear = idx("Original Publication Year") >= 0 ? idx("Original Publication Year") : idx("Year Published"),
+    iDateRead = idx("Date Read"), iDateAdded = idx("Date Added"), iShelf = idx("Exclusive Shelf"), iReview = idx("My Review");
+  if (iTitle < 0 || iAuthor < 0) return null; // doesn't look like a Goodreads export
+  return rows.slice(1).filter((r) => r.length > 1).map((r) => ({
+    title: (r[iTitle] || "").trim(),
+    author: (r[iAuthor] || "").trim(),
+    myRating: parseInt(r[iRating]) || 0,
+    avgRating: parseFloat(r[iAvgRating]) || null,
+    pages: parseInt(r[iPages]) || null,
+    year: parseInt(r[iYear]) || null,
+    dateRead: r[iDateRead] || null,
+    dateAdded: r[iDateAdded] || null,
+    shelf: (r[iShelf] || "").trim(),
+    review: (r[iReview] || "").trim(),
+  })).filter((b) => b.title);
+}
+function mapGoodreadsShelf(shelf) {
+  if (shelf === "read") return "finished";
+  if (shelf === "currently-reading") return "reading";
+  return "wishlist"; // "to-read" and any custom shelf both land on the wishlist
+}
+function importGoodreadsRows(rows) {
+  const existing = new Set(S.books.map((b) => (b.t + "::" + b.a).toLowerCase()));
+  let imported = 0, skipped = 0;
+  for (const r of rows) {
+    const key = (r.title + "::" + r.author).toLowerCase();
+    if (existing.has(key)) { skipped++; continue; }
+    const shelf = mapGoodreadsShelf(r.shelf);
+    const readDate = r.dateRead ? new Date(r.dateRead) : null;
+    const addedDate = r.dateAdded ? new Date(r.dateAdded) : new Date();
+    const validReadDate = readDate && !isNaN(readDate) ? readDate.toISOString() : new Date().toISOString();
+    S.books.push({
+      id: uid(), t: r.title, a: r.author, p: r.pages || null, y: r.year || null,
+      g: [], cover: null, gen: false, shelf,
+      addedAt: !isNaN(addedDate) ? addedDate.toISOString() : new Date().toISOString(),
+      startedAt: shelf === "reading" || shelf === "finished" ? validReadDate : null,
+      finishedAt: shelf === "finished" ? validReadDate : null,
+      rating: r.myRating || null,
+      review: r.review || null,
+      currentPage: shelf === "finished" ? (r.pages || 0) : 0,
+      fav: false,
+      r: r.avgRating || null,
+    });
+    existing.add(key);
+    imported++;
+  }
+  saveState();
+  return { imported, skipped };
 }
 
 /* ---------------- backup ---------------- */
