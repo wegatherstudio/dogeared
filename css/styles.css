@@ -487,6 +487,7 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 
 .jbp-row span { font-size: 14.5px; line-height: 1.3; }
 .journal-entry .je-prompt { font-style: italic; margin-top: 8px; }
 .journal-entry .body { font-family: var(--font-d); font-size: 16.5px; line-height: 1.6; margin-top: 8px; white-space: pre-wrap; word-wrap: break-word; }
+.sealed-body { display: flex; align-items: center; gap: 8px; color: var(--ink-3); font-style: italic; }
 .journal-entry .imgs, .mini-entry .imgs { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .journal-entry .imgs img, .mini-entry .imgs img { width: 84px; height: 84px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
 .mini-entry { padding: 10px 0; border-bottom: 1px dashed var(--line); }
@@ -545,6 +546,8 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 
 .mood-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
 .mood-row button { font-size: 22px; width: 46px; height: 46px; border-radius: 50%; background: var(--surface); border: 1px solid var(--line); transition: transform .18s var(--ease), background .2s; }
 .mood-row button.on { background: var(--ochre); transform: scale(1.12); }
+.mood-row button.loc-btn { display: flex; align-items: center; justify-content: center; color: var(--ink-2); }
+.mood-row button.loc-btn.on { color: var(--on-accent); }
 
 /* ---------- session summary ---------- */
 .summary { position: fixed; inset: 0; height: 100vh; height: 100dvh; z-index: 110; background: var(--bg); overflow-y: auto; overscroll-behavior-y: none; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; }
@@ -599,9 +602,14 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 
 /* ================================================================
    SHARE CARD — 9:16
 ================================================================ */
-.share-wrap { text-align: center; }
-.share-wrap canvas { width: 100%; max-width: 280px; aspect-ratio: 9/16; border-radius: 16px; box-shadow: var(--shadow-2); background: repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface) 0% 50%) 0 0/16px 16px; }
-.share-wrap.preview-dark canvas { background: rgba(20, 16, 10, 0.6); }
+.share-carousel { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; gap: 0; margin: 0 -20px; padding: 0 20px; }
+.share-carousel::-webkit-scrollbar { display: none; }
+.share-slide { flex: 0 0 100%; scroll-snap-align: center; display: flex; justify-content: center; }
+.share-slide canvas { width: 100%; max-width: 280px; aspect-ratio: 9/16; border-radius: 16px; box-shadow: var(--shadow-2); background: repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface) 0% 50%) 0 0/16px 16px; }
+.share-slide.preview-dark canvas { background: rgba(20, 16, 10, 0.6); }
+.carousel-dots { display: flex; justify-content: center; gap: 7px; margin-top: 12px; }
+.carousel-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--line); transition: background .2s, transform .2s; }
+.carousel-dots i.on { background: var(--ink); transform: scale(1.3); }
 .opt-row { display: flex; gap: 8px; justify-content: center; margin: 14px 0 2px; flex-wrap: wrap; transition: opacity .2s; }
 .opt-row button { font-size: 12.5px; padding: 7px 14px; border-radius: 99px; border: 1px solid var(--line); color: var(--ink-2); background: var(--surface); }
 .opt-row button.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }

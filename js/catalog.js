@@ -507,7 +507,7 @@ const SESSION_MOODS = [
   ["😌","calm"],["🤯","mind-blown"],["🥹","moved"],["😱","gripped"],["😴","sleepy"],["🤔","thoughtful"]
 ];
 const SESSION_LOCATIONS = [
-  ["🛋️","couch"],["🚌","commute"],["🛏️","bed"],["☕","café"],["🌳","outside"]
+  ["couch","couch"],["bus","commute"],["bed","bed"],["coffee","café"],["wind","outside"]
 ];
 
 /* ================================================================

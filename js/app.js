@@ -191,6 +191,7 @@ function runOnboarding() {
 let currentView = "home";
 let libFilter = "reading";
 let libEraView = false; // groups the finished shelf by year instead of a flat grid
+let profileSharesExpanded = false; // recent shares: 5 by default, up to 15 with "view more"
 let journalFilter = "all";
 
 function navigate(v) {
@@ -888,6 +889,15 @@ function journalEntriesListHTML(entries) {
   return entries.map((j) => {
     const b = j.bookId ? S.books.find((x) => x.id === j.bookId) : null;
     const kd = JOURNAL_KINDS.find((k) => k.id === j.kind) || JOURNAL_KINDS[0];
+    if (isLetterSealed(j)) {
+      return `<div class="card eared journal-entry sealed-letter">
+        <div class="je-top">
+          <span class="chip gold">${icon(kd.ic, { size: 12 })} ${kd.label}</span>
+          <span class="muted small">${fmtDateNice(j.createdAt)}${b ? " · " + esc(b.t) : " · freeform"}</span>
+        </div>
+        <div class="body sealed-body">${icon("sunrise", { size: 16 })} Sealed until ${fmtDateNice(j.unlockDate)}</div>
+      </div>`;
+    }
     return `<div class="card eared journal-entry">
       <div class="je-top">
         <span class="chip gold">${icon(kd.ic, { size: 12 })} ${kd.label}</span>
@@ -1638,7 +1648,7 @@ function renderTimer() {
   if (!book) { setTimer(null); renderTimer(); return; }
 
   const bookPct = book.p ? Math.max(0, Math.min(1, (book.currentPage || 0) / book.p)) : 0;
-  const R_OUT = 122, R_IN = 102;
+  const R_OUT = 122, R_IN = 115;
   const circOut = 2 * Math.PI * R_OUT, circIn = 2 * Math.PI * R_IN;
 
   root.innerHTML = `${topbar()}
@@ -1663,7 +1673,7 @@ function renderTimer() {
         </div>
         <div class="eyebrow" style="margin-top:14px">Where are you?</div>
         <div class="mood-row">
-          ${SESSION_LOCATIONS.map(([em, l]) => `<button data-loc="${em}" title="${l}" class="${t.location === em ? "on" : ""}">${em}</button>`).join("")}
+          ${SESSION_LOCATIONS.map(([ic, l]) => `<button data-loc="${ic}" title="${l}" class="loc-btn ${t.location === ic ? "on" : ""}">${icon(ic, { size: 18 })}</button>`).join("")}
         </div>
         <div class="btn-row" style="justify-content:center;margin-top:22px">
           <button class="btn ghost" id="tp">${t.paused ? "Resume" : "Pause"}</button>
@@ -2058,11 +2068,10 @@ function openShareCard(cfg) {
     ? [["theme", "Cover gradient"], ["gradient", "Classic"], ["transparent", "Transparent"]]
     : [["gradient", "Classic"], ["transparent", "Transparent"]];
   if (cfg.kind === "monthwrap") styleDefs = styleDefs.filter(([id]) => id !== "transparent");
-  let style = styleDefs[0][0];
   const cardData = resolveCardData(cfg);
   if (cfg.kind !== "history") recordShareHistory({ kind: cfg.kind, ...cardData });
 
-  const build = (canvas) => {
+  const drawFor = (canvas, style) => {
     drawShareCard(canvas, {
       style,
       kicker: cardData.kicker, dateStr: cardData.dateStr,
@@ -2075,26 +2084,35 @@ function openShareCard(cfg) {
 
   openSheet(`
     <h2 style="text-align:center;margin-bottom:4px">Share it beautifully</h2>
-    <p class="muted" style="text-align:center">Made for Stories, Threads, and group chats.</p>
-    <div class="share-wrap ${style === "transparent" ? "preview-dark" : ""}" id="share-wrap-el" style="margin-top:12px"><canvas id="sc"></canvas></div>
-    <div class="opt-row" id="style-row">
-      ${styleDefs.map(([id, label], i) => `<button data-style="${id}" class="${i === 0 ? "active" : ""}">${label}</button>`).join("")}
+    <p class="muted" style="text-align:center">Swipe to pick a look — made for Stories, Threads, and group chats.</p>
+    <div class="share-carousel" id="share-carousel" style="margin-top:12px">
+      ${styleDefs.map(([id]) => `<div class="share-slide ${id === "transparent" ? "preview-dark" : ""}" data-slide="${id}"><canvas></canvas></div>`).join("")}
     </div>
+    ${styleDefs.length > 1 ? `<div class="carousel-dots" id="share-dots">${styleDefs.map((_, i) => `<i class="${i === 0 ? "on" : ""}"></i>`).join("")}</div>` : ""}
     <div class="btn-row" style="justify-content:center">
       <button class="btn solid" id="sc-share">Share</button>
       <button class="btn ghost" id="sc-dl">Save image</button>
     </div>
   `, (sheet) => {
-    const canvas = $("#sc", sheet);
-    build(canvas);
-    $$("[data-style]", sheet).forEach((b) => b.addEventListener("click", () => {
-      style = b.dataset.style;
-      $$("[data-style]", sheet).forEach((x) => x.classList.toggle("active", x === b));
-      $("#share-wrap-el", sheet).classList.toggle("preview-dark", style === "transparent");
-      build(canvas);
-    }));
+    const carousel = $("#share-carousel", sheet);
+    const slides = $$(".share-slide", carousel);
+    let activeIdx = 0;
+    slides.forEach((slide, i) => drawFor(slide.querySelector("canvas"), styleDefs[i][0]));
+
+    const dots = $$("#share-dots i", sheet);
+    let scrollT;
+    carousel.addEventListener("scroll", () => {
+      clearTimeout(scrollT);
+      scrollT = setTimeout(() => {
+        const idx = Math.round(carousel.scrollLeft / carousel.clientWidth);
+        activeIdx = Math.max(0, Math.min(slides.length - 1, idx));
+        dots.forEach((d, i) => d.classList.toggle("on", i === activeIdx));
+      }, 80);
+    }, { passive: true });
+
+    const activeCanvas = () => slides[activeIdx].querySelector("canvas");
     $("#sc-dl", sheet).addEventListener("click", () => {
-      canvas.toBlob((blob) => {
+      activeCanvas().toBlob((blob) => {
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
         a.download = filenameFor();
@@ -2103,7 +2121,7 @@ function openShareCard(cfg) {
       }, "image/png");
     });
     $("#sc-share", sheet).addEventListener("click", () => {
-      canvas.toBlob(async (blob) => {
+      activeCanvas().toBlob(async (blob) => {
         const file = new File([blob], "dogeared.png", { type: "image/png" });
         if (navigator.canShare?.({ files: [file] })) {
           try { await navigator.share({ files: [file], title: "Dogeared" }); } catch {}
@@ -2481,10 +2499,13 @@ function renderProfile() {
       </div>
 
       <div class="card rise d3">
-        <div class="eyebrow">Recent shares</div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div class="eyebrow" style="margin:0">Recent shares</div>
+          ${(S.shareHistory || []).length > 5 ? `<button class="btn quiet sm" id="pf-shares-more" style="margin:0">${profileSharesExpanded ? "View less" : "View more"}</button>` : ""}
+        </div>
         ${(S.shareHistory || []).length ? `
           <div class="share-history">
-            ${S.shareHistory.slice(0, 6).map((h) => `
+            ${S.shareHistory.slice(0, profileSharesExpanded ? 15 : 5).map((h) => `
               <div class="share-hist-row" data-reshare="${h.id}">
                 ${h.coverUrl ? `<img class="cover" src="${h.coverUrl}" alt="">` : genCoverHTML({ t: h.title, a: h.subtitle, g: h.book?.g }, "cover")}
                 <div class="meta">
@@ -2538,6 +2559,7 @@ function renderProfile() {
     render();
     toast("Refreshed.");
   });
+  $("#pf-shares-more", root)?.addEventListener("click", () => { profileSharesExpanded = !profileSharesExpanded; render(); });
   $$("[data-reshare]", root).forEach((row) => row.querySelector("button").addEventListener("click", () => {
     const entry = S.shareHistory.find((h) => h.id === row.dataset.reshare);
     if (entry) openShareCard({ kind: "history", data: entry });
@@ -2663,7 +2685,7 @@ function openYearlyGoalSheet() {
     <h2 style="text-align:center;margin-bottom:6px">A goal for this year?</h2>
     <p class="muted" style="text-align:center">However many feels right — you can change it anytime.</p>
     <div class="goal-dial" style="margin-top:14px"><div class="n" id="yg-n">${goal}</div><div class="u">books this year</div></div>
-    <input type="range" id="yg-range" min="1" max="100" step="1" value="${goal}" style="max-width:280px;margin:10px auto">
+    <input type="range" id="yg-range" min="1" max="100" step="1" value="${goal}" style="margin-top:10px">
     <div class="btn-row" style="justify-content:center"><button class="btn solid" id="yg-save">Save</button></div>
   `, (sheet) => {
     $("#yg-range", sheet).addEventListener("input", (e) => {

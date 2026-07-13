@@ -69,6 +69,47 @@ const DEFAULT_GRADIENT = ["#2A2A2E", "#1C1C1F", "#101012"]; // near-black, grays
 const INK = "#FFFFFF";
 const SUB = "rgba(255,255,255,.76)";
 
+/* The icon set stores each glyph as a small fragment of SVG markup —
+   possibly several tags (<path>, <circle>, <line>, <polyline>,
+   <polygon>, <rect>) — meant to be dropped into a real <svg> element's
+   innerHTML. Canvas's Path2D only accepts raw path "d" data, not tag
+   markup, so passing this markup straight to `new Path2D(...)` silently
+   fails (caught and swallowed) — this parses each tag properly and
+   draws it with the matching canvas primitive instead. */
+function strokeIconMarkup(ctx, markup) {
+  const tagRe = /<(path|circle|line|polyline|polygon|rect)\b([^>]*)\/?>/g;
+  const attr = (str, name) => {
+    const m = new RegExp(`${name}="([^"]*)"`).exec(str);
+    return m ? m[1] : null;
+  };
+  let m;
+  while ((m = tagRe.exec(markup))) {
+    const [, tag, attrs] = m;
+    ctx.beginPath();
+    if (tag === "path") {
+      const d = attr(attrs, "d");
+      if (d) { try { ctx.stroke(new Path2D(d)); } catch {} }
+      continue;
+    } else if (tag === "circle") {
+      const cx = +attr(attrs, "cx"), cy = +attr(attrs, "cy"), r = +attr(attrs, "r");
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    } else if (tag === "line") {
+      ctx.moveTo(+attr(attrs, "x1"), +attr(attrs, "y1"));
+      ctx.lineTo(+attr(attrs, "x2"), +attr(attrs, "y2"));
+    } else if (tag === "rect") {
+      const x = +attr(attrs, "x"), y = +attr(attrs, "y"), w = +attr(attrs, "width"), h = +attr(attrs, "height");
+      ctx.rect(x, y, w, h);
+    } else if (tag === "polyline" || tag === "polygon") {
+      const pts = (attr(attrs, "points") || "").trim().split(/\s+/).map(Number);
+      for (let i = 0; i < pts.length; i += 2) {
+        if (i === 0) ctx.moveTo(pts[i], pts[i + 1]); else ctx.lineTo(pts[i], pts[i + 1]);
+      }
+      if (tag === "polygon") ctx.closePath();
+    }
+    ctx.stroke();
+  }
+}
+
 function drawShareCard(canvas, opts) {
   canvas.width = 1080; canvas.height = 1920;
   const ctx = canvas.getContext("2d");
@@ -125,7 +166,7 @@ function drawShareCard(canvas, opts) {
   const gapToTitle = visualH ? 86 : 0;
 
   const badgeCount = Math.min((opts.badges || []).length, 8);
-  const badgeRowH = badgeCount ? 112 : 0;
+  const badgeRowH = badgeCount ? 138 : 0;
   const contentHeight = visualH + gapToTitle + titleLines.length * titleLH
     + (opts.subtitle ? 56 : 0) + (opts.stars ? 78 : 0) + 356 + badgeRowH;
   const startY = TOP_ZONE_BOTTOM + Math.max(0, (BOTTOM_ZONE_TOP - TOP_ZONE_BOTTOM - contentHeight) / 2);
@@ -179,7 +220,7 @@ function drawShareCard(canvas, opts) {
     // behind each one guarantees contrast no matter what's directly behind
     // it (this card's gradient varies per book when using the cover style)
     if (badgeCount) {
-      const badgeTop = gy[1] + 70;
+      const badgeTop = gy[1] + 96; // more breathing room from the stats above
       const maxRowW = W - 180;
       const size = Math.max(32, Math.min(44, Math.floor((maxRowW - (badgeCount - 1) * 18) / badgeCount)));
       const gap = 18;
@@ -187,21 +228,18 @@ function drawShareCard(canvas, opts) {
       let bx = W / 2 - rowW / 2;
       const icons = (opts.badges || []).slice(0, badgeCount);
       icons.forEach((iconName) => {
-        const d = (typeof ICON_PATHS !== "undefined" && ICON_PATHS[iconName]) || null;
+        const markup = (typeof ICON_PATHS !== "undefined" && ICON_PATHS[iconName]) || null;
         const cx2 = bx + size / 2, cy2 = badgeTop + size / 2 - 4;
         ctx.beginPath();
         ctx.arc(cx2, cy2, size / 2 + 8, 0, Math.PI * 2);
         ctx.fillStyle = "rgba(255,255,255,0.14)";
         ctx.fill();
-        if (d) {
+        if (markup) {
           ctx.save();
           ctx.translate(bx, badgeTop);
           ctx.scale(size / 24, size / 24);
-          try {
-            const p = new Path2D(d);
-            ctx.strokeStyle = "rgba(255,255,255,0.94)"; ctx.lineWidth = 1.8; ctx.lineJoin = "round"; ctx.lineCap = "round";
-            ctx.stroke(p);
-          } catch {}
+          ctx.strokeStyle = "rgba(255,255,255,0.94)"; ctx.lineWidth = 1.9; ctx.lineJoin = "round"; ctx.lineCap = "round";
+          try { strokeIconMarkup(ctx, markup); } catch {}
           ctx.restore();
         }
         bx += size + gap;
