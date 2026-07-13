@@ -232,19 +232,20 @@ async function pushCloudData(immediate) {
   if (!navigator.onLine) { cloudStatus = "offline"; refreshAccountUI(); return; }
   try {
     const payload = { ...S };
-    delete payload.remoteCatalog;
+    delete payload.remoteCatalog; // large, regenerable cache — not worth syncing
     payload.uid = cloudUser.uid;
     payload.updatedAtClient = Date.now();
     payload.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
-
-    console.log("Firestore payload:", payload);
-
     await fbDb.collection("users").doc(cloudUser.uid).set(payload);
     localStorage.setItem(LAST_PUSH_KEY, String(Date.now()));
     cloudStatus = "synced"; lastSyncError = null;
   } catch (e) {
-    ...
+    const msg = firestoreErrorMessage(e);
+    lastSyncError = { code: e?.code, message: msg };
+    cloudStatus = "error";
+    if (!immediate) toast(msg); // the very first push already gets a toast from onSignedIn; don't double up
   }
+  refreshAccountUI();
 }
 
 /* ---------------- hook into the existing local save ----------------
