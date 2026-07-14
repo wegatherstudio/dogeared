@@ -1921,9 +1921,12 @@ function resolveCardData(cfg) {
     };
   }
   if (cfg.kind === "session") {
+    const curPage = cfg.book.currentPage || 0;
+    const pc = cfg.book.p ? Math.min(100, Math.round((curPage / cfg.book.p) * 100)) : null;
     return {
       kicker: "reading session", dateStr: fmtDateForCard(),
       title: cfg.book.t, subtitle: cfg.book.a, coverUrl: cfg.book.cover, book: cfg.book,
+      progress: cfg.book.p ? { page: curPage, total: cfg.book.p, pct: pc } : null,
       stats: [
         [cfg.session.pagesRead, "pages"],
         [fmtHM(cfg.session.minutes), "duration"],
@@ -2076,7 +2079,7 @@ function openShareCard(cfg) {
       style,
       kicker: cardData.kicker, dateStr: cardData.dateStr,
       title: cardData.title, subtitle: cardData.subtitle,
-      coverUrl: cardData.coverUrl, book: cardData.book, stars: cardData.stars,
+      coverUrl: cardData.coverUrl, book: cardData.book, stars: cardData.stars, progress: cardData.progress,
       shelfBooks: cardData.shelfBooks, stats: cardData.stats, badges: cardData.badges, profileName: S.profile.name,
     });
   };

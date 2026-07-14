@@ -168,7 +168,7 @@ function drawShareCard(canvas, opts) {
   const badgeCount = Math.min((opts.badges || []).length, 8);
   const badgeRowH = badgeCount ? 138 : 0;
   const contentHeight = visualH + gapToTitle + titleLines.length * titleLH
-    + (opts.subtitle ? 56 : 0) + (opts.stars ? 78 : 0) + 356 + badgeRowH;
+    + (opts.subtitle ? 56 : 0) + (opts.stars ? 78 : 0) + (opts.progress ? (opts.stars ? 60 : 78) : 0) + 356 + badgeRowH;
   const startY = TOP_ZONE_BOTTOM + Math.max(0, (BOTTOM_ZONE_TOP - TOP_ZONE_BOTTOM - contentHeight) / 2);
 
   /* the book-details + stats block, flowing down from a given title Y */
@@ -200,6 +200,12 @@ function drawShareCard(canvas, opts) {
       ctx.font = "42px Georgia, serif";
       let st = ""; for (let i = 1; i <= 5; i++) st += i <= opts.stars ? "★" : "☆";
       ctx.fillText(st, W / 2, y);
+    }
+    if (opts.progress) {
+      y += opts.stars ? 60 : 78;
+      ctx.fillStyle = SUB;
+      ctx.font = "500 25px Outfit, Arial, sans-serif";
+      ctx.fillText(`PAGE ${opts.progress.page} OF ${opts.progress.total}  ·  ${opts.progress.pct}% THROUGH`, W / 2, y);
     }
 
     // stat grid — 2 columns × 2 rows, order supplied by the caller

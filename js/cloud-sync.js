@@ -220,6 +220,27 @@ function applyCloudData(cloudData) {
   render();
 }
 
+/* Firestore rejects `undefined` outright (throws invalid-argument) — it
+   must be `null` or the field omitted. The schema has grown a lot of
+   optional fields recently (dueDate, unlockDate, becauseOf, readHistory,
+   etc.), so rather than hunt for one specific culprit, sanitize
+   recursively before every write: undefined -> null, and drop any
+   value type Firestore can't store at all (functions, etc.). */
+function sanitizeForFirestore(value) {
+  if (value === undefined) return null;
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(sanitizeForFirestore);
+  if (value instanceof Date) return value;
+  if (value && typeof value.toDate === "function") return value; // Firestore Timestamp / FieldValue
+  const out = {};
+  for (const k of Object.keys(value)) {
+    const v = value[k];
+    if (typeof v === "function") continue;
+    out[k] = sanitizeForFirestore(v);
+  }
+  return out;
+}
+
 /* ---------------- push (debounced) ---------------- */
 function scheduleCloudPush() {
   if (!CLOUD_ENABLED || !cloudUser) return;
@@ -231,8 +252,9 @@ async function pushCloudData(immediate) {
   if (!CLOUD_ENABLED || !cloudUser || !fbDb) return;
   if (!navigator.onLine) { cloudStatus = "offline"; refreshAccountUI(); return; }
   try {
-    const payload = { ...S };
-    delete payload.remoteCatalog; // large, regenerable cache — not worth syncing
+    const raw = { ...S };
+    delete raw.remoteCatalog; // large, regenerable cache — not worth syncing
+    const payload = sanitizeForFirestore(raw);
     payload.uid = cloudUser.uid;
     payload.updatedAtClient = Date.now();
     payload.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
