@@ -85,7 +85,7 @@ header {
 }
 .nav { display: flex; align-items: center; justify-content: space-between; padding: 14px 22px; max-width: 1080px; margin: 0 auto; }
 .brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-d); font-size: 19px; }
-.brand .mark { font-size: 22px; }
+.brand .mark { width: 30px; height: 30px; object-fit: contain; }
 
 /* ---------- buttons ---------- */
 .btn {
@@ -228,7 +228,7 @@ footer a { text-decoration: underline; }
 
 <header>
   <div class="nav">
-    <div class="brand"><span class="mark">🐕📖</span> Dogeared</div>
+    <div class="brand"><img class="mark" src="icons/logo-mark.png" alt="Dogeared"> Dogeared</div>
     <a class="btn sm" href="index.html">Open the app</a>
   </div>
 </header>
