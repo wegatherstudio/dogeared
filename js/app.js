@@ -64,6 +64,7 @@ function runOnboarding() {
           <button data-obtheme="light" class="${resolvedTheme() === "light" ? "on" : ""}">${icon("sun", { size: 15 })} Light</button>
           <button data-obtheme="dark" class="${resolvedTheme() === "dark" ? "on" : ""}">${icon("moon", { size: 15 })} Dark</button>
         </div>
+        <button class="btn ghost ob-google-btn" id="ob-welcome-signin" style="margin-top:24px">${typeof GOOGLE_G_SVG !== "undefined" ? GOOGLE_G_SVG : ""} Already have an account? Sign in</button>
       </div>`;
       foot = `<span></span><button class="btn solid" data-next>Let's begin</button>`;
     }
@@ -153,6 +154,29 @@ function runOnboarding() {
       picks.name = e.target.value;
       const next = $("[data-next]", ob);
       if (picks.name.trim()) next.removeAttribute("disabled"); else next.setAttribute("disabled", "");
+    });
+    $("#ob-welcome-signin", ob)?.addEventListener("click", () => {
+      if (typeof signInWithGoogle !== "function" || !CLOUD_ENABLED) { toast("Cloud sync isn't set up for this copy of the app yet."); return; }
+      signInWithGoogle((user) => {
+        if (!fbDb) { googleUser = user; step = 1; draw(); return; }
+        fbDb.collection("users").doc(user.uid).get().then((doc) => {
+          const cloudData = doc.exists ? doc.data() : null;
+          if (cloudData && cloudData.profile) {
+            // an existing account with a real shelf already — skip setup entirely and load it
+            applyCloudData(cloudData);
+            markKnownDevice(user.uid);
+            toast("Welcome back — synced from your account.");
+            ob.style.transition = "opacity .5s var(--ease)";
+            ob.style.opacity = 0;
+            setTimeout(() => { ob.remove(); boot(); }, 480);
+          } else {
+            // signed in, but nothing to restore — carry on into normal setup, already signed in
+            googleUser = user;
+            step = 1;
+            draw();
+          }
+        }).catch(() => { googleUser = user; step = 1; draw(); });
+      });
     });
     $("#ob-google-signin", ob)?.addEventListener("click", () => {
       if (typeof signInWithGoogle !== "function") { toast("Cloud sync isn't set up for this copy of the app yet."); return; }
