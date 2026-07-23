@@ -2525,6 +2525,14 @@ function renderProfile() {
         ${accountSectionHTML()}
       </div>
 
+      <div class="card eared rise d3 support-card">
+        <div class="eyebrow">${icon("coffee", { size: 12 })} Enjoying Dogeared?</div>
+        <p style="font-size:14.5px;line-height:1.55;margin:6px 0 0">Dogeared is free, ad-free, and built by one person who loves books as much as you do. If it's earned a place in your reading life, a small coffee goes a long way.</p>
+        <div class="btn-row">
+          <button class="btn solid sm" id="pf-support">${icon("coffee", { size: 14 })} Buy me a coffee</button>
+        </div>
+      </div>
+
       <div class="card rise d3">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <div class="eyebrow" style="margin:0">Recent shares</div>
@@ -2581,6 +2589,7 @@ function renderProfile() {
   $("#acct-google", root)?.addEventListener("click", signInWithGoogle);
   $("#acct-signout", root)?.addEventListener("click", signOutCloud);
   $("#acct-retry", root)?.addEventListener("click", () => pushCloudData(false));
+  $("#pf-support", root)?.addEventListener("click", openSupportSheet);
   $("#pf-refresh-profile", root).addEventListener("click", () => {
     ensureReaderProfileFresh(true);
     render();
@@ -2766,6 +2775,20 @@ function openAvatarPicker() {
 /* ================================================================
    SHEET machinery
 ================================================================ */
+function openSupportSheet() {
+  openSheet(`
+    <div class="support-sheet" style="text-align:center">
+      <div class="eyebrow" style="justify-content:center;display:flex;gap:6px">${icon("coffee", { size: 13 })} Buy me a coffee</div>
+      <h2 class="serif" style="font-size:22px;margin-top:6px">Thank you for reading with Dogeared.</h2>
+      <p class="muted small" style="max-width:34ch;margin:8px auto 0">Every bit helps keep it free, ad-free, and growing. Scan with GCash to send a coffee's worth of thanks — no amount is too small.</p>
+      <img src="icons/gcash-qr.png" alt="GCash QR code" style="width:220px;height:220px;border-radius:var(--r-md);margin:20px auto 4px;display:block;border:1px solid var(--line)">
+      <p class="muted small">Open GCash → Scan QR</p>
+      <button class="btn ghost block" id="support-done" style="margin-top:18px">Close</button>
+    </div>
+  `, (sheet) => {
+    $("#support-done", sheet)?.addEventListener("click", closeSheet);
+  });
+}
 function openSheet(html, onMount) {
   closeSheet();
   const back = document.createElement("div");
