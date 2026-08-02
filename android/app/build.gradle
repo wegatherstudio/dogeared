@@ -1,0 +1,59 @@
+plugins {
+    id 'com.android.application'
+}
+
+/* The signing key is never committed. CI writes the keystore to
+   android/keystore.jks from the ANDROID_KEYSTORE_BASE64 secret and passes the
+   password through ANDROID_KEYSTORE_PASSWORD. Locally, drop your own
+   keystore.jks in android/ and export the same variable. With neither present
+   the release build falls back to unsigned output so `assembleRelease` still
+   works for anyone cloning the repo. */
+def keystoreFile = rootProject.file('keystore.jks')
+def keystorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
+def hasSigningKey = keystoreFile.exists() && keystorePassword != null
+
+android {
+    namespace 'studio.wegather.dogeared'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'studio.wegather.dogeared'
+        minSdk 21
+        targetSdk 35
+        // Overridden by CI: -PversionCode=<run number> -PversionName=<git tag>
+        versionCode project.hasProperty('versionCode') ? project.versionCode.toInteger() : 1
+        versionName project.hasProperty('versionName') ? project.versionName : '1.0.0'
+    }
+
+    if (hasSigningKey) {
+        signingConfigs {
+            release {
+                storeFile keystoreFile
+                storePassword keystorePassword
+                keyAlias 'dogeared'
+                keyPassword keystorePassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (hasSigningKey) {
+                signingConfig signingConfigs.release
+            }
+            // The app is a thin shell around the live web app — there is no
+            // app-side code worth shrinking, and minification only risks
+            // stripping the browser-helper classes the manifest names.
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
+}

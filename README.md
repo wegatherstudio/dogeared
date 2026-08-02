@@ -31,6 +31,69 @@ Open `http://localhost:8080`. (Opening `index.html` directly works too, minus th
 - **Android Chrome:** menu → Install app
 - **Desktop Chrome/Edge:** install icon in the address bar
 
+## The Android app
+
+There's an official Android app in `android/`, published as a signed APK on
+this repo's [Releases](https://github.com/wegatherstudio/dogeared/releases)
+page. Android visitors to `landing.html` are auto-detected and pointed at
+`install-android.html`, which walks them through the sideload.
+
+It's a **Trusted Web Activity** — a native shell that opens this very site
+fullscreen, with no address bar, using the phone's browser engine. That means
+there is no second copy of the UI to keep in sync: the Android app renders the
+same HTML/CSS/JS as the web app and picks up changes the moment you push to
+`main`. You only need a new APK when something app-level changes — the name,
+the icon, the launch URL, the splash.
+
+### How the pieces fit
+
+| Piece | Where |
+|---|---|
+| Android project | `android/` — package `studio.wegather.dogeared` |
+| Build + release | `.github/workflows/android-release.yml` |
+| Install guide | `install-android.html` |
+| Site-side verification | `.well-known/assetlinks.json` in the **`wegatherstudio.github.io`** repo |
+
+The address bar only disappears if both halves of the Digital Asset Links
+handshake agree: the app names the site (`asset_statements` in
+`android/app/src/main/res/values/strings.xml`) and the site names the app's
+signing certificate (`assetlinks.json`). That file must be served from the
+**domain root**, not `/dogeared/` — which is why it lives in the separate
+`wegatherstudio.github.io` repo, alongside a `.nojekyll` file so GitHub Pages
+doesn't strip the dot-directory.
+
+### Cutting a release
+
+Push a tag and the workflow builds, signs, verifies and publishes the APK:
+
+```bash
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+Pushes to the Android branch build the APK too, without releasing it, so
+breakage surfaces before you tag. The signing key is never committed — CI
+restores it from two repository secrets, `ANDROID_KEYSTORE_BASE64` and
+`ANDROID_KEYSTORE_PASSWORD`.
+
+> **Keep a backup of the signing keystore.** If it's lost, you can't ship an
+> update to anyone who already installed the app — they'd have to uninstall
+> and reinstall. The build fails loudly if the APK's certificate stops matching
+> the fingerprint published in `assetlinks.json`.
+
+### Building it locally
+
+Put your `keystore.jks` in `android/` and run:
+
+```bash
+cd android
+ANDROID_KEYSTORE_PASSWORD=... gradle assembleRelease
+# → app/build/outputs/apk/release/app-release.apk
+```
+
+Requires JDK 17 and the Android SDK (compileSdk 35). Without a keystore the
+build still runs and produces an unsigned APK.
+
 ## Deploy free on GitHub Pages
 
 ```bash

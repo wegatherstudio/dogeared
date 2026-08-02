@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Dogeared</string>
+
+    <!-- The live web app. Everything the user sees comes from here. -->
+    <!-- ?src=android lets the site tell app users apart from browser users,
+         so the landing page stops offering the app to people who have it. -->
+    <string name="launch_url" translatable="false">https://wegatherstudio.github.io/dogeared/index.html?src=android</string>
+
+    <!--
+      Half of the Digital Asset Links handshake: the app vouches for the site.
+      The other half lives at
+      https://wegatherstudio.github.io/.well-known/assetlinks.json
+      and vouches for this app's signing certificate. Both must agree or the
+      browser keeps its address bar visible over the app.
+      "site" must be a bare origin — scheme and host only, no path.
+    -->
+    <string name="asset_statements" translatable="false">
+        [{
+          \"relation\": [\"delegate_permission/common.handle_all_urls\"],
+          \"target\": {
+            \"namespace\": \"web\",
+            \"site\": \"https://wegatherstudio.github.io\"
+          }
+        }]
+    </string>
+
+    <!-- Long-press launcher shortcuts, mirroring manifest.webmanifest -->
+    <string name="shortcut_timer_short">Resume</string>
+    <string name="shortcut_timer_long">Resume reading</string>
+    <string name="shortcut_journal_short">Journal</string>
+    <string name="shortcut_journal_long">New journal entry</string>
+</resources>

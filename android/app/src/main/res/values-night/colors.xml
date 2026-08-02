@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Dark-mode chrome. The web app's theme defaults to "auto", so it follows the
+  system setting too — keeping the status bar, navigation bar and splash in
+  step with the page instead of flashing light chrome around dark content.
+-->
+<resources>
+    <color name="colorPrimary">#141414</color>
+    <color name="navigationBarColor">#141414</color>
+    <color name="backgroundColor">#141414</color>
+</resources>

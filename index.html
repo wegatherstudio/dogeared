@@ -20,6 +20,21 @@
 
 <link rel="stylesheet" href="css/styles.css">
 
+<script>
+  /* Remember when we're running inside the Android app, so the landing page
+     never asks someone to install an app they already have. The Android shell
+     launches with ?src=android, and hands the first page an "android-app://"
+     referrer. Nothing else in the app reads this. */
+  (function () {
+    try {
+      if (new URLSearchParams(location.search).get("src") === "android" ||
+          document.referrer.indexOf("android-app://") === 0) {
+        localStorage.setItem("dogeared.androidApp", "1");
+      }
+    } catch (e) {}
+  })();
+</script>
+
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-7663CHNXB4"></script>
 <script>
   window.dataLayer = window.dataLayer || [];

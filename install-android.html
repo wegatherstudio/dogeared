@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install Dogeared for Android</title>
+<meta name="description" content="Install the official Dogeared Android app. Same shelf, same journal, same account — properly installed on your phone.">
+<meta name="theme-color" content="#F3F2F7">
+<link rel="icon" type="image/png" href="icons/favicon.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200;0,6..72,300;0,6..72,400;0,6..72,500&family=Outfit:wght@200;300;400;500&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg: #F3F2F7;
+  --surface: #F9F8FD;
+  --ink: #1C1C1F;
+  --ink-2: rgba(28, 28, 31, 0.62);
+  --ink-3: rgba(28, 28, 31, 0.38);
+  --line: rgba(28, 28, 31, 0.13);
+  --shadow-1: 0 1px 2px rgba(28,28,31,.05), 0 8px 24px rgba(28,28,31,.07);
+  --font-d: "Newsreader", Georgia, serif;
+  --font-b: "Outfit", -apple-system, "Segoe UI", sans-serif;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141414; --surface: #1E1E1E;
+    --ink: #F2F2F2; --ink-2: rgba(242,242,242,.62); --ink-3: rgba(242,242,242,.36);
+    --line: rgba(242,242,242,.12);
+    --shadow-1: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.4);
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--font-b); font-weight: 300;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2 { font-family: var(--font-d); font-weight: 400; letter-spacing: -0.01em; }
+a { color: inherit; }
+
+header {
+  border-bottom: 1px solid var(--line);
+}
+.nav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 22px; max-width: 720px; margin: 0 auto;
+}
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-d); font-size: 19px; }
+.brand .mark { width: 30px; height: 30px; object-fit: contain; }
+.nav a { font-size: 13.5px; color: var(--ink-2); text-decoration: none; }
+
+.wrap { max-width: 720px; margin: 0 auto; padding: 0 22px; }
+
+.hero { padding: 56px 0 8px; text-align: center; }
+.hero .icon {
+  width: 76px; height: 76px; border-radius: 19px; object-fit: contain;
+  box-shadow: var(--shadow-1); margin-bottom: 20px;
+}
+.hero h1 { font-size: clamp(30px, 6vw, 42px); line-height: 1.1; margin: 0; }
+.hero p {
+  max-width: 480px; margin: 18px auto 0; color: var(--ink-2);
+  font-size: 16px; line-height: 1.6;
+}
+.eyebrow {
+  font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 500; margin-bottom: 14px;
+}
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 15px 30px; border-radius: 999px;
+  background: var(--ink); color: var(--bg);
+  font-size: 15px; font-weight: 500; letter-spacing: 0.02em;
+  text-decoration: none; border: none; cursor: pointer;
+  box-shadow: var(--shadow-1);
+  transition: transform .15s var(--ease);
+}
+.btn:active { transform: scale(0.96); }
+.btn.block { display: flex; width: 100%; max-width: 380px; margin: 28px auto 0; }
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); box-shadow: none; }
+.meta { text-align: center; color: var(--ink-3); font-size: 12.5px; margin-top: 12px; }
+
+section { padding: 48px 0; }
+
+/* not-on-android note */
+.notice {
+  display: none;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 18px; padding: 18px 20px; margin-top: 30px;
+  color: var(--ink-2); font-size: 14.5px; line-height: 1.55;
+}
+.notice.show { display: block; }
+.notice strong { color: var(--ink); font-weight: 500; }
+
+/* steps */
+h2 { font-size: 24px; margin: 0 0 6px; }
+.lede { color: var(--ink-2); font-size: 15px; line-height: 1.6; margin: 0 0 28px; }
+ol.steps { list-style: none; counter-reset: step; padding: 0; margin: 0; }
+ol.steps > li {
+  counter-increment: step; position: relative;
+  padding: 0 0 26px 52px; border-left: 1px solid var(--line); margin-left: 15px;
+}
+ol.steps > li:last-child { border-left-color: transparent; padding-bottom: 0; }
+ol.steps > li::before {
+  content: counter(step);
+  position: absolute; left: -15px; top: -2px;
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--ink); color: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 500;
+}
+ol.steps h3 { font-family: var(--font-b); font-size: 15.5px; font-weight: 500; margin: 4px 0 6px; }
+ol.steps p { color: var(--ink-2); font-size: 14.5px; line-height: 1.6; margin: 0; }
+.quote {
+  display: inline-block; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 8px; padding: 2px 8px; font-size: 13.5px; color: var(--ink);
+}
+
+/* faq */
+.faq { border-top: 1px solid var(--line); }
+details {
+  border-bottom: 1px solid var(--line); padding: 18px 0;
+}
+summary {
+  cursor: pointer; list-style: none; font-size: 15.5px; font-weight: 400;
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+}
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "+"; color: var(--ink-3); font-size: 19px; flex: none; }
+details[open] summary::after { content: "−"; }
+details p { color: var(--ink-2); font-size: 14.5px; line-height: 1.65; margin: 12px 0 0; }
+
+footer {
+  border-top: 1px solid var(--line); padding: 36px 22px 48px; text-align: center;
+  color: var(--ink-3); font-size: 13px;
+}
+footer a { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="nav">
+    <a class="brand" href="landing.html" style="text-decoration:none"><img class="mark" src="icons/logo-mark.png" alt=""> Dogeared</a>
+    <a href="index.html">Open the web app</a>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section class="hero">
+    <img class="icon" src="icons/icon-512.png" alt="">
+    <div class="eyebrow">Official Android app</div>
+    <h1>Dogeared, on your phone.</h1>
+    <p>The same app you already use — same shelf, same journal, same stats — installed properly on Android, with its own icon in your app drawer.</p>
+
+    <a class="btn block" id="download" href="https://github.com/wegatherstudio/dogeared/releases/latest">Download the APK →</a>
+    <div class="meta">Free · No account required · Works offline</div>
+
+    <div class="notice" id="not-android">
+      <strong>Heads up — this doesn't look like an Android phone.</strong>
+      The download below only installs on Android. On iPhone or iPad, open
+      <a href="index.html">the web app</a> in Safari and tap Share → Add to Home Screen.
+      On a computer, just use the web app in your browser.
+    </div>
+  </section>
+
+  <section>
+    <h2>Installing it</h2>
+    <p class="lede">Dogeared isn't on the Play Store yet, so Android will ask you to confirm a couple of things along the way. That's normal — here's the whole flow.</p>
+
+    <ol class="steps">
+      <li>
+        <h3>Tap the download button</h3>
+        <p>It takes you to the latest release on GitHub. Tap the file ending in <span class="quote">.apk</span> to download it.</p>
+      </li>
+      <li>
+        <h3>Chrome will ask if you're sure</h3>
+        <p>You'll see something like <span class="quote">This type of file can harm your device</span>. Tap <strong>Download anyway</strong>. Android shows this for every app downloaded outside the Play Store, whoever made it.</p>
+      </li>
+      <li>
+        <h3>Open the downloaded file</h3>
+        <p>Tap the download notification, or find it in your Files app under Downloads.</p>
+      </li>
+      <li>
+        <h3>Allow installs from this source</h3>
+        <p>The first time only, Android sends you to a settings screen. Turn on <span class="quote">Allow from this source</span>, then press back. If you don't see this, skip ahead — you're already set.</p>
+      </li>
+      <li>
+        <h3>Tap Install</h3>
+        <p>Play Protect may show one more <span class="quote">Install anyway</span> prompt. Confirm it, and Dogeared lands in your app drawer.</p>
+      </li>
+      <li>
+        <h3>Open it and sign in</h3>
+        <p>If you use Google sign-in on the web, use the same account here and your shelf appears exactly as you left it.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="faq">
+    <details>
+      <summary>Is it safe? Android keeps warning me.</summary>
+      <p>Those warnings mean "this didn't come from the Play Store" — not "this is dangerous". Android shows them for any app installed directly. The APK is built in public from this repository's source code by a GitHub Actions workflow you can read, and it's signed with a key that the site itself vouches for. If the file had been tampered with, Android would refuse to install it over the real one.</p>
+    </details>
+    <details>
+      <summary>Is this different from the web app?</summary>
+      <p>No — and that's deliberate. The Android app is the same Dogeared, same screens, same everything. What you get is a real app icon, a proper fullscreen window with no browser bar, and reading-session notifications in your system tray.</p>
+    </details>
+    <details>
+      <summary>Will I lose my books and journal entries?</summary>
+      <p>No. If you were already using Dogeared in Chrome on this phone, the app picks up exactly where you left off — it's the same storage. And if you use Google sign-in, everything syncs regardless of which device or version you're on.</p>
+    </details>
+    <details>
+      <summary>Can I use the web app and the Android app together?</summary>
+      <p>Yes. Sign in with the same Google account and they stay in step — start a book on your laptop, finish it on your phone.</p>
+    </details>
+    <details>
+      <summary>How do updates work?</summary>
+      <p>Mostly automatically. Improvements to Dogeared itself reach the app as soon as they go live, with nothing to reinstall. Every so often there's a new APK for app-level changes — you'd download it the same way, straight over the old one, and nothing is lost.</p>
+    </details>
+    <details>
+      <summary>Why not the Play Store?</summary>
+      <p>It's on the list. For now, downloading it here keeps Dogeared free and independent.</p>
+    </details>
+  </section>
+
+</div>
+
+<footer>
+  <a href="landing.html">About Dogeared</a> · <a href="index.html">Open the web app</a><br>
+  <span style="opacity:.7">Prefer not to install? The web app does everything the Android app does.</span>
+</footer>
+
+<script>
+/* Nudge non-Android visitors somewhere more useful, without hiding the
+   download — people do fetch APKs on a desktop to move across. */
+(function () {
+  if (!/Android/i.test(navigator.userAgent || "")) {
+    document.getElementById("not-android").classList.add("show");
+  }
+})();
+</script>
+
+</body>
+</html>
