@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Light-mode chrome, matching the web app's --bg / theme-color. -->
+<!-- Light-mode chrome, matching the web app's background and theme-color. -->
 <resources>
     <color name="colorPrimary">#F3F2F7</color>
     <color name="navigationBarColor">#F3F2F7</color>
