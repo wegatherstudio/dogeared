@@ -17,5 +17,5 @@ const FIREBASE_CONFIG = {
   storageBucket: "dogeared-e64cd.firebasestorage.app",
   messagingSenderId: "206560526787",
   appId: "1:206560526787:web:f3ce1ebc62c021d7f83d76",
-  measurementId: "G-FP9G2TYQ47",
+  measurementId: "G-5CSSKHXKP7",
 };
