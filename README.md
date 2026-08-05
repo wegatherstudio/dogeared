@@ -1,171 +1,104 @@
 # Dogeared 🐕📖
 
-**Build a reading life.** A premium, social reading companion — Strava for readers, with the emotional intelligence of Letterboxd. Pure HTML/CSS/JS. No install, no build step, no backend. Runs from any folder, installs to any homescreen, works offline.
+### Build a Reading Life
 
-## What's in this build
+**A premium reading companion for people who take their books seriously — without turning it into homework.**
 
-- **Floating iOS-style dock** — rounded, glass-blurred, anchored with margin (not edge-to-edge). The session timer button is a large, raised, high-contrast circle floating dead-center above the dock — unmistakably the primary action.
-- **Cinematic onboarding** — genre picks → mood picks → a daily page dial → your name. Every pick seeds a real recommendation engine, not just a preferences form.
-- **Discover** — a vertical snap feed of full-bleed book cards. The search icon stays fixed on screen while you scroll. Skip a book and it's gone for good. **Deal me more** never repeats what you've already been shown in this session, and quietly pulls fresh candidates live from Open Library once the local pool runs low.
-- **Reflective Journaling — now on the Homepage.** No separate tab; your two most recent entries sit right on Home with a **New entry** button and an **Edit** button on each, plus a "See all entries" link to the full journal list (also editable there). Four entry kinds — Reflection, Character, Analysis, Quote — each with its own prompt set, and up to 4 photo attachments per entry.
-- **Live book search** via Open Library, sticky search bar so it doesn't scroll away from long result lists.
-- **Sessions like workouts** — the timer card now fills nearly the full screen (space reserved below for "Save a quote mid-read"), with a timestamp-based clock that survives lock/close, a page slider, mood tagging, then a full-screen animated summary with an XP pop.
-- **Share cards** — 9:16, laid out with a fully dynamic text flow (long or short titles never overlap the author line — verified against titles that wrap to 1, 2, or 3 lines). Three background styles to choose from: **Cover theme** (a gradient sampled directly from the book's own cover art), **Classic** (the signature Dogeared gold→ochre→ember gradient, muted for legibility), and **Transparent** (no fill, no cover — just white text, for overlaying your own photo). Every card is always anchored to a real book cover when one exists. A date stamp sits under the kicker as dated proof. Every card you generate — even if closed without sharing — is saved to **Profile → Recent shares** for re-sending later.
-- **Monthly Wrap** — a Spotify-Wrapped-style recap that auto-generates once each month closes: a swipeable, story-style viewer covering the stat breakdown, a cover collage, your standout saved quote, a month-over-month comparison, an encouraging note on quiet months, and a next-month goal nudge.
-- **Gamification with restraint** — XP/levels and 15 achievements, all rendered with a single-color icon system (no emoji, except the mid-session "how's it feel?" mood picker, which keeps its emoji on purpose).
-- **Appearance** — light/dark toggle lives only in Profile. Dark mode gives the (dark-inked) logo mark a lighter halo so it's never dark-on-dark.
-- **Optional cloud sync** — sign in with Google from Profile to back up your shelf and pick it up on another device. Entirely additive: skip it and the app works exactly as it always has, fully offline, no account. See "Set up cloud sync" below to enable it for your own deployment.
-- **Local-first** — everything lives in `localStorage`. JSON export/import for backup or moving devices.
+---
 
-## Run it
+Dogeared turns every book you open into something worth remembering. Track your reading sessions like workouts. Save the line that stopped you cold. Watch your shelf grow into something you're actually proud of.
 
-```bash
-python3 -m http.server 8080
-# or: npx serve .
-```
-Open `http://localhost:8080`. (Opening `index.html` directly works too, minus the offline service worker, which needs `http://` or `https://`.)
+It's Strava for readers, with the emotional intelligence of Letterboxd — calm, beautiful, and built for the phone in your hand. No account required. Works fully offline. Yours, always.
 
-## Install to homescreen
+---
 
-- **iOS Safari:** Share → Add to Home Screen
-- **Android Chrome:** menu → Install app
-- **Desktop Chrome/Edge:** install icon in the address bar
+## Why Dogeared
 
-## The Android app
+**You read more than you remember.**
 
-There's an official Android app in `android/`, published as a signed APK on
-this repo's [Releases](https://github.com/wegatherstudio/dogeared/releases)
-page. Android visitors to `landing.html` are auto-detected and pointed at
-`install-android.html`, which walks them through the sideload.
+You finish a book and swear you'll remember that one perfect line. A week later, it's gone. Your "to-read" list lives in three different apps and none of them stick. Picking what to read next feels harder than it should, every single time.
 
-It's a **Trusted Web Activity** — a native shell that opens this very site
-fullscreen, with no address bar, using the phone's browser engine. That means
-there is no second copy of the UI to keep in sync: the Android app renders the
-same HTML/CSS/JS as the web app and picks up changes the moment you push to
-`main`. You only need a new APK when something app-level changes — the name,
-the icon, the launch URL, the splash.
+Dogeared fixes all four:
 
-### How the pieces fit
-
-| Piece | Where |
+| | |
 |---|---|
-| Android project | `android/` — package `studio.wegather.dogeared` |
-| Build + release | `.github/workflows/android-release.yml` |
-| Install guide | `install-android.html` |
-| Site-side verification | `.well-known/assetlinks.json` in the **`wegatherstudio.github.io`** repo |
+| 💬 **Never lose a quote again** | The line that mattered stays exactly where you left it. |
+| 🏛️ **Build a shelf you love** | Every book you've read, in one place, beautifully organized. |
+| 🔥 **Stay motivated, effortlessly** | Streaks, XP, and your Monthly Wrap turn reading into momentum. |
+| 🎯 **Make reading intentional** | A few seconds after each session turns reading into real reflection. |
+| 🧭 **Always know what's next** | Discover ends the "what should I read next" spiral for good. |
+| ☁️ **It's yours, wherever you are** | Works fully offline, syncs optionally across devices. |
 
-The address bar only disappears if both halves of the Digital Asset Links
-handshake agree: the app names the site (`asset_statements` in
-`android/app/src/main/res/values/strings.xml`) and the site names the app's
-signing certificate (`assetlinks.json`). That file must be served from the
-**domain root**, not `/dogeared/` — which is why it lives in the separate
-`wegatherstudio.github.io` repo, alongside a `.nojekyll` file so GitHub Pages
-doesn't strip the dot-directory.
+---
 
-### Cutting a release
+## Features
 
-Push a tag and the workflow builds, signs, verifies and publishes the APK:
+### ⏱️ Sessions, tracked like workouts
+Hit start when you start reading. Dogeared times your session, tracks the pages you cover, and asks how it felt when you're done — then wraps it into a satisfying animated summary with an XP pop. The clock is timestamp-based, so it survives locking your phone or closing the app entirely.
 
-```bash
-git tag v1.0.1
-git push origin v1.0.1
-```
+> *You pick up your book on the train. Two stops later, close the app and watch your streak and pages add up — no manual math required.*
 
-Pushes to the Android branch build the APK too, without releasing it, so
-breakage surfaces before you tag. The signing key is never committed — CI
-restores it from two repository secrets, `ANDROID_KEYSTORE_BASE64` and
-`ANDROID_KEYSTORE_PASSWORD`.
+### 📓 A journal that lives on your homepage
+No digging through tabs. Your two most recent entries sit right on Home, ready to reread or edit. Four entry kinds — **Reflection**, **Character**, **Analysis**, and **Quote** — each with its own thoughtful prompt set, plus up to four photo attachments per entry.
 
-> **Keep a backup of the signing keystore.** If it's lost, you can't ship an
-> update to anyone who already installed the app — they'd have to uninstall
-> and reinstall. The build fails loudly if the APK's certificate stops matching
-> the fingerprint published in `assetlinks.json`.
+> *A line hits you mid-chapter. You save it as a Quote entry with a photo of the page, right there, before the feeling fades.*
 
-### Building it locally
+### 🔮 Discover, made for you
+A full-screen, swipeable feed of books picked from what you actually like. Skip what's not for you and it's gone for good. Tap **Deal me more** and it keeps surfacing fresh titles — never repeating what you've already seen, and quietly pulling new candidates live from Open Library once the local pool runs low.
 
-Put your `keystore.jks` in `android/` and run:
+> *You finish a book and have no idea what's next. Thirty seconds of swiping later, you do.*
 
-```bash
-cd android
-ANDROID_KEYSTORE_PASSWORD=... gradle assembleRelease
-# → app/build/outputs/apk/release/app-release.apk
-```
+### 📚 A library that's actually yours
+Every book you've read, are reading, or want to read — organized, searchable, and built from real book data via live Open Library search. Not a wishlist you forget. A shelf you keep coming back to.
 
-Requires JDK 17 and the Android SDK (compileSdk 35). Without a keystore the
-build still runs and produces an unsigned APK.
+### ✨ Share cards worth posting
+Turn any book or quote into a designed, story-ready 9:16 card. Three background styles: **Cover theme** (a gradient sampled from the book's own cover art), **Classic** (the signature Dogeared gold→ochre→ember gradient), and **Transparent** (just white text, for overlaying your own photo). Every card is dated as proof of the day — and every card you make is saved to your profile for re-sending later, even if you close it without sharing.
 
-## Deploy free on GitHub Pages
+> *You just finished a book that wrecked you. One tap, and you've got something beautiful to share — not a screenshot of your notes app.*
 
-```bash
-git init && git add . && git commit -m "Dogeared"
-git branch -M main
-git remote add origin https://github.com/YOUR-USERNAME/dogeared.git
-git push -u origin main
-```
-Then **Settings → Pages → Deploy from branch → main / (root)**. Live in a minute at `https://YOUR-USERNAME.github.io/dogeared/`.
+### 🗓️ Your Monthly Wrap
+Once a month closes, Dogeared quietly puts together your own recap — a swipeable, story-style viewer covering your stat breakdown, a cover collage, your standout saved quote, a month-over-month comparison, an encouraging word on the quiet months, and a gentle nudge for what's next.
 
-## Set up cloud sync (optional — Google sign-in)
+### 🏅 Progress that feels good, not gimmicky
+Earn XP, level up, and unlock 15 achievements as you read. No cartoon badges, no noise — just quiet recognition that you're building something real.
 
-The app works completely offline with no account, exactly as before. This section is only if you want to add **"Sign in with Google"** so people can back up their shelf and pick it up on another device.
+### 🎨 Designed to be lived in
+A floating, glass-blurred dock keeps everything one thumb away, with the session timer raised dead-center as the unmistakable primary action. Cinematic onboarding — genre picks, mood picks, a daily page dial, your name — where every choice seeds a real recommendation engine, not just a preferences form. Light and dark mode throughout.
 
-### 1. Create a Firebase project
-1. Go to [console.firebase.google.com](https://console.firebase.google.com) → **Add project** → give it any name → you can skip Google Analytics.
-2. Once created, click the **web icon (`</>`)** to register a web app. Name it anything (e.g. "Dogeared"). You don't need Firebase Hosting — you're already using GitHub Pages.
-3. Firebase will show you a `firebaseConfig` object. Copy those values into **`js/firebase-config.js`** in this project, replacing the `YOUR_...` placeholders.
+---
 
-### 2. Turn on Google sign-in
-In the Firebase console: **Build → Authentication → Get started → Sign-in method → Google → Enable → Save.**
+## Privacy & your data
 
-### 3. Add your GitHub Pages domain as authorized
-Still in Authentication: **Settings tab → Authorized domains → Add domain** → add `YOUR-USERNAME.github.io` (Firebase auto-adds `localhost`, so local testing works immediately).
+**No account needed. Nothing tracked. Nothing sold.**
 
-### 4. Create the database
-**Build → Firestore Database → Create database** → start in **production mode** → pick any region close to you.
+Everything lives on your own device by default. Dogeared works completely offline, forever, without ever asking who you are.
 
-### 5. Lock it down with security rules
-In Firestore → **Rules** tab, replace the contents with:
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-  }
-}
-```
-This is the important part — it guarantees each signed-in person can only ever read or write their *own* document, never anyone else's.
+If you *want* your shelf on more than one device, you can optionally sign in with Google to back it up — entirely additive, and skippable. Signing out never deletes anything locally; it just stops syncing. Your data is only ever readable by you, enforced at the database level. And whether or not you sync, **Export backup** hands you the whole thing as a JSON file you can keep or move anywhere.
 
-### 6. Push and test
-Commit your filled-in `js/firebase-config.js` and push. Open your GitHub Pages URL, go to **Profile → Account → Sign in with Google**. That's it.
+---
 
-**How the sync actually behaves:**
-- Signing in is optional and additive — nothing changes for people who don't sign in.
-- It's "last write wins" across devices: every local save is pushed to Firestore a few seconds later (debounced), and signing in on a new device pulls the newest cloud copy down. This is *not* real-time multi-device merging — if you edited the same account on two devices at once while both were offline, whichever reconnects and syncs last will overwrite the other. For the realistic case (one person switching between a phone and a laptop) this is the right amount of complexity.
-- The one moment the app asks instead of guessing: signing into a Google account that *already* has cloud data, on a device that *also* already has its own local data. You get an explicit choice — keep the cloud copy or keep this device's copy — rather than silently picking one.
-- Signing out never deletes anything locally; it just stops syncing.
-- Note: Firestore documents cap out at 1MB. A very photo-heavy Journal (lots of embedded images) could theoretically approach that ceiling over a long time. If that ever becomes a real issue, the fix is moving journal images into Firebase Storage instead of embedding them in the synced document — a further enhancement, not built here.
+## Get Dogeared
 
-## Structure
+**📱 On Android** — Download the official app from the [Releases page](https://github.com/wegatherstudio/dogeared/releases). It's the real thing: fullscreen, no address bar, installed properly on your phone.
 
-```
-dogeared/
-├── index.html          # shell: topbar mount points, 6-slot bottom nav (incl. Journal + session CTA)
-├── manifest.webmanifest
-├── sw.js                 # offline shell cache + network-first for API/covers
-├── css/styles.css        # design system: solid colors only, light/dark, motion
-├── js/icons.js            # single-color SVG icon set (no emoji, except session moods)
-├── js/catalog.js         # genres, moods, 48-book seed catalog, quotes, achievements, journal prompts
-├── js/store.js           # state, derived stats, streak/XP engine, affinity recs, monthly-wrap math
-├── js/cloud-sync.js      # optional Google sign-in + Firestore sync (no-ops until configured)
-├── js/firebase-config.js # your Firebase project credentials go here
-├── js/api.js             # Open Library search/synopsis + 9:16 solid-color share-card renderer
-└── js/app.js              # onboarding, router, all views, timer, journal, monthly wrap, profile
-```
+**🌐 On any device** — Open the web app and add it to your homescreen. It launches like a native app and works offline:
 
-## Notes
+- **iOS Safari** — Share → *Add to Home Screen*
+- **Android Chrome** — menu → *Install app*
+- **Desktop Chrome / Edge** — install icon in the address bar
 
-- **Discover's "skip"** is permanent for that book (stored in `S.seenFeed`) — it will not resurface. **"Deal me more"** tracks everything shown this session so it never repeats, and automatically expands the pool via live Open Library search once fewer than 6 unseen local candidates remain.
-- **Share cards** are 1080×1920 canvases with a restored brand gradient (gold → ochre → ember) for non-transparent exports; transparent mode drops the fill and the cover entirely so it composites cleanly over your own photo. A history of generated cards lives in Profile → Recent shares for re-sending later, dated so each one still reads as "proof for that day."
-- **Monthly Wrap** looks at the *previous* completed calendar month, only after your join date, and won't nag twice — opening it marks it viewed.
-- All state lives under one `localStorage` key (`dogeared.state.v2`). Profile → **Export backup** downloads it as JSON; **Import backup** restores it anywhere.
+---
+
+## Requirements
+
+Any modern browser. No install, no signup, no subscription. Free.
+
+---
+
+<div align="center">
+
+### Every book deserves to be remembered.
+
+*Dogeared. Because the best part of reading is remembering it.*
+
+</div>
